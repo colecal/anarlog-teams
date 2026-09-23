@@ -1,0 +1,46 @@
+name: Import pinned community source
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/import-community.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: import-community
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Import community files without upstream history or workflows
+        env:
+          UPSTREAM_SHA: 39613e537ba4c2ddbd2eb5fb4f33c6bf9e79d11e
+        run: |
+          set -euo pipefail
+          if test -f Cargo.toml; then
+            echo 'Source already exists; refusing to overwrite it.'
+            exit 1
+          fi
+          source_dir=$(mktemp -d)
+          git -C "$source_dir" init
+          git -C "$source_dir" remote add origin https://github.com/fastrepl/anarlog.git
+          git -C "$source_dir" fetch --depth=1 origin "$UPSTREAM_SHA"
+          test "$(git -C "$source_dir" rev-parse FETCH_HEAD)" = "$UPSTREAM_SHA"
+          git -C "$source_dir" archive "$UPSTREAM_SHA" -- . ':!enterprise' ':!.github/workflows' | tar -x
+          test ! -d enterprise
+          git add --all
+          git diff --cached --quiet && exit 0
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Import MIT community snapshot at 39613e5 without enterprise code or upstream workflows'
+      - name: Publish community snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: git -c credential.helper='!gh auth git-credential' push origin HEAD:main
