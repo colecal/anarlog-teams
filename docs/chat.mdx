@@ -1,0 +1,52 @@
+---
+title: "Chat with your meetings"
+description: "Ask questions, find related context, and review proposed note changes."
+---
+
+Anarlog Chat can answer questions about the open meeting, search your other meetings, and help turn a conversation into follow-up work. Chat uses the Intelligence model selected under **Settings → Intelligence**.
+
+## Ask about the open meeting
+
+1. Open a meeting note.
+2. Open **Chat**.
+3. Ask a question or choose a suggested prompt. The open meeting is added automatically when its content is available.
+
+Useful requests include:
+
+- “What are my action items from this meeting?”
+- “Draft a follow-up email to the participants.”
+- “What decisions did we make?”
+- “Compare this meeting with the previous project review.”
+- “Find meetings where we discussed the launch date.”
+
+Chat can search meeting titles and content, recurring meeting history, contacts, and connected calendar events when the request needs them.
+
+Reasoning and tool steps appear in a single **Activity** row. Expand it to inspect the steps; a spinner shows when work is still running. Answers and proposed edits remain visible below it.
+
+## Organize meetings
+
+Ask Chat to list folders, create a folder, or move meetings into an existing folder. For example: “Move my launch review meetings into Projects/Launch.” Folder moves change where meetings appear; they do not merge or rewrite their contents. Chat reports meetings it moved, left unchanged, or could not move.
+
+Folder management is available in desktop Chat. Local CLI/MCP writes remain limited to reviewed note proposals, and hosted MCP remains read-only.
+
+Conversation dates appear above the messages. Hover over a message to see its time.
+
+## Guide the context
+
+Chat uses the open meeting automatically and can add other meetings, people, and records when your request needs them. You can also drag another meeting into Chat to include it in your next message.
+
+The app does not show this context as removable chips. Name the meeting or person in your request when similarly named records could be confused, or say “Use only this meeting” to keep the answer scoped. Start a new chat when you want a clean conversation without the earlier message history.
+
+## Review proposed changes
+
+Chat can propose a summary edit or transcript correction. Review the proposed change before you apply it. A proposal does not silently replace your note.
+
+For direct transcript editing, speaker reassignment, and re-transcription, see [Notes, summaries, and transcripts](/notes#correct-a-transcript).
+
+## Privacy and external search
+
+Chat sends the prompt and required context to your selected Intelligence provider. A local provider keeps that model request on your computer. A hosted provider receives the text needed to answer.
+
+<Warning>
+  Chat can also search the public web when a request needs current external information. The search query leaves your device even if your Transcription and Intelligence models are local. See [Data, privacy, and retention](/data-and-privacy) before using sensitive context with hosted models or web search.
+</Warning>

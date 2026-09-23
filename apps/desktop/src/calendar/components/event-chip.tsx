@@ -1,0 +1,185 @@
+import { t } from "@lingui/core/macro";
+import { useMutation } from "@tanstack/react-query";
+import { format } from "date-fns";
+import { useCallback, useMemo } from "react";
+
+import { CircleNotch } from "@anlg/ui/components/icons";
+import { Button } from "@anlg/ui/components/ui/button";
+import {
+  AppFloatingPanel,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@anlg/ui/components/ui/popover";
+import { cn } from "@anlg/utils";
+
+import { toTz, useTimezone } from "~/calendar/hooks";
+import { useIgnoredEvents } from "~/calendar/ignored-events";
+import { EventDisplay } from "~/session/components/outer-header/metadata";
+import { getOrCreateSessionForEventId } from "~/session/queries";
+import {
+  type MenuItemDef,
+  useNativeContextMenu,
+} from "~/shared/hooks/useNativeContextMenu";
+import { useTimeFormat } from "~/shared/hooks/useTimeFormat";
+import type { TimelineEventRow } from "~/sidebar/timeline/utils";
+import { useTabs } from "~/store/zustand/tabs";
+
+export function EventChip({
+  eventId,
+  event,
+}: {
+  eventId: string;
+  event: TimelineEventRow | undefined;
+}) {
+  const tz = useTimezone();
+  const timeFormat = useTimeFormat();
+  const { ignoreEvent, ignoreSeries } = useIgnoredEvents();
+  const title = event?.title || t`Busy`;
+  const trackingId = event?.tracking_id_event ?? undefined;
+  const recurrenceSeriesId = event?.recurrence_series_id ?? undefined;
+  const isAllDay = !!event?.is_all_day;
+  const color = event?.calendar_color || "#888";
+
+  const startedAt = event?.started_at
+    ? format(toTz(event.started_at, tz), timeFormat)
+    : null;
+
+  const handleIgnore = useCallback(() => {
+    if (!trackingId) {
+      return;
+    }
+
+    ignoreEvent(trackingId);
+  }, [trackingId, ignoreEvent]);
+
+  const handleIgnoreSeries = useCallback(() => {
+    if (!recurrenceSeriesId) {
+      return;
+    }
+
+    ignoreSeries(recurrenceSeriesId);
+  }, [recurrenceSeriesId, ignoreSeries]);
+
+  const contextMenu = useMemo<MenuItemDef[]>(() => {
+    const menu: MenuItemDef[] = [
+      {
+        id: "ignore",
+        text: recurrenceSeriesId ? "Delete This Event" : "Delete Event",
+        action: handleIgnore,
+      },
+    ];
+
+    if (recurrenceSeriesId) {
+      menu.push({
+        id: "ignore-series",
+        text: "Delete All Recurring Events",
+        action: handleIgnoreSeries,
+      });
+    }
+
+    return menu;
+  }, [recurrenceSeriesId, handleIgnore, handleIgnoreSeries]);
+  const showContextMenu = useNativeContextMenu(contextMenu);
+
+  if (!event) {
+    return null;
+  }
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        {isAllDay ? (
+          <button
+            className={cn([
+              "text-primary-foreground w-full truncate rounded px-1.5 py-0.5 text-left text-xs leading-tight",
+              "cursor-pointer select-none hover:opacity-80",
+            ])}
+            style={{ backgroundColor: color }}
+            onContextMenu={showContextMenu}
+          >
+            {title}
+          </button>
+        ) : (
+          <button
+            className={cn([
+              "flex w-full items-center gap-1 rounded pl-0.5 text-left text-xs leading-tight",
+              "cursor-pointer select-none hover:opacity-80",
+            ])}
+            onContextMenu={showContextMenu}
+          >
+            <div
+              className="w-[2.5px] shrink-0 self-stretch rounded-full"
+              style={{ backgroundColor: color }}
+            />
+            <span className="truncate">{title}</span>
+            {startedAt && (
+              <span className="text-muted-foreground ml-auto shrink-0 font-mono">
+                {startedAt}
+              </span>
+            )}
+          </button>
+        )}
+      </PopoverTrigger>
+      <PopoverContent
+        variant="app"
+        align="start"
+        collisionPadding={16}
+        className="flex max-h-[min(80vh,36rem)] w-[min(320px,calc(100vw-32px))] min-w-0 flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <AppFloatingPanel className="min-h-0 overflow-x-hidden overflow-y-auto">
+          <EventPopoverContent eventId={eventId} event={event} />
+        </AppFloatingPanel>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function EventPopoverContent({
+  eventId,
+  event,
+}: {
+  eventId: string;
+  event: TimelineEventRow;
+}) {
+  const openCurrent = useTabs((state) => state.openCurrent);
+
+  const openNote = useMutation({
+    mutationFn: () =>
+      getOrCreateSessionForEventId(eventId, event.title || "Untitled"),
+    onSuccess: (sessionId) => {
+      openCurrent({ type: "sessions", id: sessionId });
+    },
+    onError: (error) => {
+      console.error("[calendar] failed to open event note", error);
+    },
+  });
+
+  return (
+    <div className="flex flex-col gap-3 p-4">
+      <EventDisplay
+        event={{
+          title: event.title || t`Busy`,
+          startedAt: event.started_at ?? undefined,
+          endedAt: event.ended_at ?? undefined,
+          location: event.location ?? undefined,
+          meetingLink: event.meeting_link ?? undefined,
+          description: event.description ?? undefined,
+          calendarId: event.calendar_id ?? undefined,
+        }}
+      />
+      <Button
+        size="sm"
+        className="bg-primary text-primary-foreground hover:bg-primary/90 min-h-8 w-full"
+        disabled={openNote.isPending}
+        onClick={() => openNote.mutate()}
+      >
+        {openNote.isPending ? (
+          <CircleNotch className="size-3.5 animate-spin" aria-hidden="true" />
+        ) : null}
+        Open note
+      </Button>
+    </div>
+  );
+}

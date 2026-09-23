@@ -1,0 +1,201 @@
+---
+title: "Cloud API and connectors"
+description: "Opt in to hosted REST and remote MCP access for your Anarlog meetings."
+---
+
+The Cloud API lets remote agents read your Anarlog meetings while the desktop app is closed. It requires Pro access, either from your personal plan or membership in an active paid Team, and stays off until you enable it.
+
+<Warning>
+  Enabling Cloud API & Connectors uploads a separate server-readable copy of
+  your meeting titles, notes, summaries, participants, action items, and
+  transcripts. Your normal cloud sync data stays end-to-end encrypted. Turning
+  the feature off deletes the server-readable copies.
+</Warning>
+
+## Enable cloud access
+
+1. Open **Settings → Developers → Cloud API & Connectors**.
+2. Review the disclosure and turn the feature on.
+3. Wait for Anarlog to upload your existing meetings.
+4. If your client does not support OAuth, create a cloud API key and copy it. The key is shown once.
+
+Keys start with `anl_` and are stored hashed. Revoke a key from the same settings page when you no longer use it.
+
+## REST API
+
+The base URL is `https://api.anarlog.so/v1`. Send your cloud key as a bearer token:
+
+```bash
+curl \
+  -H "Authorization: Bearer anl_..." \
+  https://api.anarlog.so/v1/meetings
+```
+
+The read endpoints are:
+
+| Endpoint | Returns |
+| --- | --- |
+| `GET /v1/meetings` | Meeting list. Accepts `query`, `series_id`, `limit` (default 20, clamped to `1..200`), and `offset`. |
+| `GET /v1/meetings/{meeting_id}` | Meeting metadata, the canonical memo, summaries, participants, and action items. Memo and summary bodies are markdown. |
+| `GET /v1/meetings/{meeting_id}/transcript` | Joined `text`, the raw `words`, and `pagination`. Accepts `offset` and `limit` (default 200, clamped to `1..500`). |
+| `GET /v1/meetings/{meeting_id}/history` | Meetings in the same recurring series, newest first. Accepts `limit` and `offset`. |
+| `GET /v1/meetings/{meeting_id}/export` | Full export including transcripts. `format=json` (default) or `format=markdown`. |
+
+List responses carry a `pagination` object with `offset`, `limit`, `returned`, `total`, and `next_offset`; a missing `next_offset` means the page reached the end. See the [OpenAPI document](https://api.anarlog.so/openapi.json) for the complete hosted schema.
+
+Errors use this envelope:
+
+```json
+{ "error": { "code": "not_found", "message": "meeting 'x' not found" } }
+```
+
+Codes: `unauthorized`, `not_found`, `invalid_request`, `internal_error`. The hosted API can also return:
+
+- `403 subscription_required` when the account does not have Pro access through a personal plan or an active paid Team membership.
+- `403 cloud_api_not_enabled` when the account has opted out.
+- `429` with a plain-text `rate limit exceeded` body and `retry-after` header when you exceed the hosted request limit.
+
+The request limit allows a burst of 10 requests per account, then refills one request every 200 milliseconds.
+
+<Note>
+  Meeting snapshots are limited to 2 MB. When a snapshot is larger, Anarlog removes word-level transcript timing before upload but keeps the transcript text. If the snapshot is still larger than 2 MB, that meeting cannot upload. A hosted transcript without word timing returns the retained text with an empty `words` array.
+</Note>
+
+## Remote MCP
+
+The Streamable HTTP endpoint is:
+
+```text
+https://api.anarlog.so/mcp
+```
+
+It exposes the same five meeting-read tools as the local MCP server:
+
+- `list_meetings`
+- `get_meeting`
+- `get_meeting_transcript`
+- `get_recurring_meeting_history`
+- `export_meeting`
+
+Hosts that support MCP OAuth 2.1 connect your Anarlog account without a cloud API key. The host discovers Anarlog's authorization server from the MCP endpoint, opens the Anarlog sign-in and consent flow, and stores the resulting connection.
+
+Anarlog does not use identity scopes as meeting permissions. Meeting access remains limited to the server-readable snapshots you explicitly opted in to upload. Every MCP tool is read-only, and every access token is checked for its signature, issuer, expiry, MCP resource audience, and OAuth client identifier.
+
+Anarlog publishes OAuth protected-resource metadata at:
+
+```text
+https://api.anarlog.so/.well-known/oauth-protected-resource/mcp
+```
+
+The metadata points the host to Anarlog's existing Supabase authorization server. That server uses dynamic client registration and PKCE with SHA-256. The host sends the MCP `resource` value during authorization and token exchange; Anarlog binds issued OAuth tokens to `https://api.anarlog.so/mcp` and rejects tokens minted for another resource.
+
+<Note>
+  OAuth does not bypass Anarlog's product controls. The account must have Pro access through a personal plan or an active paid Team membership, and **Cloud API & Connectors** must remain enabled. Disabling the feature deletes the uploaded snapshots and makes existing connector tokens unusable for meeting access.
+</Note>
+
+### Claude Code
+
+Install the **Anarlog** plugin:
+
+```bash
+claude plugin marketplace add fastrepl/anarlog
+claude plugin install anarlog@fastrepl
+```
+
+Or add the remote server directly. Claude discovers OAuth from the MCP endpoint:
+
+```bash
+claude mcp add --transport http anarlog https://api.anarlog.so/mcp
+```
+
+### Cursor
+
+Import `https://github.com/fastrepl/anarlog` as a team marketplace and install **Anarlog**, or add this MCP server:
+
+```json
+{
+  "mcpServers": {
+    "anarlog": {
+      "url": "https://api.anarlog.so/mcp"
+    }
+  }
+}
+```
+
+### GitHub Copilot CLI
+
+```bash
+copilot plugin marketplace add fastrepl/anarlog
+copilot plugin install anarlog@fastrepl
+```
+
+### ChatGPT and Codex
+
+Add the Fastrepl source, restart the ChatGPT desktop app, then install **Anarlog**:
+
+```bash
+codex plugin marketplace add fastrepl/anarlog \
+  --sparse .agents/plugins \
+  --sparse agent-plugins/anarlog
+```
+
+Public listing in a host's plugin directory is a separate review step. Installing from the Fastrepl source does not submit or publish the connector.
+
+### Other OAuth MCP clients
+
+Choose Streamable HTTP and use `https://api.anarlog.so/mcp` as the server URL. Do not paste an API key. The client must follow MCP OAuth 2.1 protected-resource discovery.
+
+## API-key clients
+
+Use a static bearer header only when the host cannot complete MCP OAuth. Create the key under **Settings → Developers → Cloud API & Connectors**.
+
+### Claude Code
+
+```bash
+claude mcp add --transport http anarlog https://api.anarlog.so/mcp \
+  --header "Authorization: Bearer anl_..."
+```
+
+### OpenAI Responses API
+
+Pass the remote MCP URL and authorization header in the tool definition:
+
+```js
+const response = await client.responses.create({
+  model: "gpt-5",
+  input: "Summarize my latest Anarlog meeting.",
+  tools: [
+    {
+      type: "mcp",
+      server_label: "anarlog",
+      server_url: "https://api.anarlog.so/mcp",
+      headers: {
+        Authorization: "Bearer anl_...",
+      },
+      require_approval: "never",
+    },
+  ],
+});
+```
+
+### Poke
+
+Poke does not complete MCP OAuth. Create a personal cloud API key in Anarlog and paste it only into your own Poke recipe or connection.
+
+<Warning>
+  Do not share that key, put it in a public recipe, or reuse one key across users.
+</Warning>
+
+### Other MCP clients
+
+Choose Streamable HTTP, use `https://api.anarlog.so/mcp` as the server URL, and add:
+
+```text
+Authorization: Bearer anl_...
+```
+
+## Disable cloud access
+
+Turn off **Cloud API & Connectors** under **Settings → Developers**. Anarlog immediately deletes all server-readable meeting snapshots. Your local meetings and end-to-end encrypted cloud sync data are unchanged.
+
+Revoked keys cannot read snapshots. If you lose Pro access from both your personal plan and any paid Team memberships, existing cloud keys return `subscription_required`.

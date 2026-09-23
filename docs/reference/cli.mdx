@@ -1,0 +1,114 @@
+---
+title: "CLI reference"
+description: "Commands and global options available in the Anarlog CLI."
+---
+
+## Global syntax
+
+```text
+anarlog [--base DIR] [--db-path FILE] [--json] <command>
+```
+
+| Option | Environment variable | Behavior |
+| --- | --- | --- |
+| `--base DIR` | `ANARLOG_BASE` | Use `DIR/app.db`. |
+| `--db-path FILE` | `ANARLOG_DB_PATH` | Use an explicit SQLite file. |
+| `--json` | — | Emit a versioned JSON response or machine-readable JSON error. |
+
+`--db-path` takes precedence over `--base`. Without either option, the CLI uses Anarlog's platform application-data directory and recognized legacy locations.
+
+The installed command is `anarlog` on DEB, AppImage, macOS, Windows, and Settings-installed builds.
+
+## Account commands
+
+```bash
+anarlog auth login
+anarlog auth status
+anarlog auth logout
+```
+
+`auth login` prints a URL that can be opened in any browser, including one on another device. Sign in, choose **Copy URL** on the completion page, then paste the `anarlog://auth/callback` link into the hidden CLI prompt. The CLI verifies the session with Anarlog before saving it in the same local auth store as the desktop app.
+
+With `--json`, the login URL and instructions are printed to stderr. The callback URL is read from stdin. JSON appears on stdout only after login completes.
+
+On Linux, the CLI uses Secret Service when it is available. Headless systems without Secret Service fall back to `auth.cli.json` in Anarlog's local application-data directory with permissions limited to the current user. The desktop app reconciles that file into Secret Service when it becomes available. On Windows, the CLI stores sessions with DPAPI in the desktop app's secure auth file. `auth logout` removes the local session; it does not delete the Anarlog account.
+
+`auth status` reports the signed-in account and whether the current access token has expired. The stored refresh token lets the desktop app refresh an expired access token when it starts.
+
+## Meeting data sources
+
+Meeting commands accept `--source local|cloud|auto` before their subcommand:
+
+```bash
+anarlog meetings --source cloud list
+anarlog meetings --source auto get MEETING_ID
+```
+
+`local` is the default and reads Anarlog's database on this computer. `cloud` reads the opted-in hosted snapshots using the account saved by `anarlog auth login`. `auto` uses the local database when it exists and falls back to Cloud when it does not. Set `ANARLOG_SOURCE` to choose the same behavior without a flag.
+
+All meeting read commands support all three sources. `--base`, `--db-path`, and `doctor` apply only to local data. Proposals and `anarlog mcp` remain local because hosted Cloud access is read-only.
+
+## Meeting commands
+
+| Command | Options | Result |
+| --- | --- | --- |
+| `meetings list` | `-q, --query TEXT`, `--series-id ID`, `--limit 1..200`, `--offset NUMBER` | Meetings ordered by the application query layer. Defaults to 20 results. |
+| `meetings get ID` | — | Metadata, canonical memo, summaries, participants, and action items. |
+| `meetings note ID` | `--kind note\|summary\|all` | The selected note documents. Defaults to `note`. |
+| `meetings transcript ID` | `--limit 1..500`, `--offset NUMBER` | A bounded transcript word page. Defaults to 200 words from offset 0. |
+| `meetings history ID` | `--limit 1..200`, `--offset NUMBER` | A page of meetings from the same recurring series. Defaults to 20 from offset 0. |
+| `meetings export ID` | `--format markdown\|json`, `-o, --output FILE`, `--force` | A complete meeting export, including transcripts. Defaults to Markdown on stdout. Existing files require `--force`. |
+
+## Proposal commands
+
+These commands insert or inspect staged edits. They do not apply the edit to the meeting. Apply happens in the desktop app.
+
+| Command | Options | Result |
+| --- | --- | --- |
+| `proposals create` | `--meeting ID`, `--kind summary\|memo`, `--target ID`, `--content TEXT` or `--content-file FILE` | Stages a pending replacement. `--target` is required when the meeting has multiple summaries. |
+| `proposals list` | `--meeting ID`, `--status pending\|applied\|declined\|all`, `--limit 1..200`, `--offset NUMBER` | Proposals, newest first. Defaults to pending rows, 20 results. |
+| `proposals show ID` | — | Proposal metadata and a unified diff. |
+| `proposals decline ID` | — | Marks a pending proposal declined. The meeting is unchanged. |
+
+## JSON response contract
+
+Successful `--json` responses contain:
+
+| Field | Meaning |
+| --- | --- |
+| `schema_version` | CLI JSON contract version. Currently `1`. |
+| `command` | Stable command identifier such as `meetings.list`. |
+| `data` | Command result. |
+| `pagination` | Page metadata when the command is paginated. |
+
+Pagination includes `offset`, `limit`, `returned`, optional `total`, and optional `next_offset`.
+
+## Doctor command
+
+```bash
+anarlog --json doctor
+```
+
+Checks the resolved database path, read-only access, and required schema without changing data. It exits with status 0 when `ready` is true and status 1 when `ready` is false.
+
+## MCP command
+
+```bash
+anarlog mcp
+```
+
+Starts the local MCP server over stdio. Meeting reads are idempotent. Proposal tools stage or decline pending edits without applying them to the meeting.
+
+<Warning>
+  Do not write other output to the server's stdout. Anything else written there corrupts the MCP stdio protocol stream.
+</Warning>
+
+## Help and version
+
+```bash
+anarlog --help
+anarlog auth --help
+anarlog meetings --help
+anarlog meetings list --help
+anarlog --version
+```

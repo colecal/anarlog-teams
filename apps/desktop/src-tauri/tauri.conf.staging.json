@@ -1,0 +1,34 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Anarlog Staging",
+  "mainBinaryName": "anarlog-staging",
+  "identifier": "com.hyprnote.staging",
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["anarlog-staging", "hyprnote-staging"]
+      }
+    },
+    "updater": {
+      "active": false
+    }
+  },
+  "bundle": {
+    "icon": [
+      "icons/staging/32x32.png",
+      "icons/staging/128x128.png",
+      "icons/staging/128x128@2x.png",
+      "icons/staging/icon.icns",
+      "icons/staging/icon.ico"
+    ],
+    "macOS": {
+      "files": {
+        "Resources/mlx-swift_Cmlx.bundle/default.metallib": "resources/mlx.metallib",
+        "Resources/AppIcon.icns": "resources/staging/AppIcon.icns"
+      },
+      "dmg": {
+        "background": "assets/dmg-background-staging.png"
+      }
+    }
+  }
+}

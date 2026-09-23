@@ -1,0 +1,24 @@
+Origin: Anarlog
+Label: Anarlog
+Suite: stable
+Codename: stable
+Version: 1.4.26
+Date: Wed, 23 Sep 2026 11:23:21 GMT
+Architectures: amd64 arm64
+Components: main
+Description: Anarlog stable desktop releases
+MD5Sum:
+ 4153f4889eb29de51bfa1f66ba753f1a 638 main/binary-amd64/Packages
+ f06ec4a11a4e75f87f075bedce615096 431 main/binary-amd64/Packages.gz
+ 3c3f991a3b65c5b2c57ca6c4236c6c5f 638 main/binary-arm64/Packages
+ 1c2207f9be15b036573eca732570a439 434 main/binary-arm64/Packages.gz
+SHA1:
+ 1a635dc53358e9e6aa1c425c666b40ea1e8b18de 638 main/binary-amd64/Packages
+ 33b98cd3fce4e43c6e95861db4f185f7d212bff3 431 main/binary-amd64/Packages.gz
+ 6ff9357f33fd7367370380d8f9b504703fb2cabb 638 main/binary-arm64/Packages
+ 3afa35c33be268cb47430c19788ed10c0b1e9477 434 main/binary-arm64/Packages.gz
+SHA256:
+ 52638bccb96d02d3e2987c9d04794353fbb8a6c2fdc8ea0f14d23d8090c765a8 638 main/binary-amd64/Packages
+ 8020aac92efdcf7031a42e28367c945e1ea9d5502d0aee05079794d4d3eefed2 431 main/binary-amd64/Packages.gz
+ 768aec4659b9f79eb5248c94b286c68a5684ead2d386b61e605fa17499e55adb 638 main/binary-arm64/Packages
+ f7be5dfebd7da86c3409a0c6e77edd273f0f05e008a51073444cce7b350fd950 434 main/binary-arm64/Packages.gz

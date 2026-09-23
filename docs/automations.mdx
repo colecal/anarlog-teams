@@ -1,0 +1,58 @@
+---
+title: "Automate meeting follow-up"
+description: "Send recaps, create issues, update project notes, or export every meeting."
+---
+
+Automations run repeatable work when a meeting ends. They are part of Anarlog Pro.
+
+## Use a starter
+
+Open **Automations** and choose a starter from the sidebar:
+
+| Starter | What it does | Configuration |
+| --- | --- | --- |
+| Share a meeting recap in Slack | Posts the meeting title and AI summary. | Connect Slack and choose a channel. |
+| Update project notes in Notion | Appends a dated meeting update to a page. | Connect Notion and choose a page. |
+| Turn action items into Linear issues | Creates issue drafts from assigned follow-ups. | Connect Linear and choose a team. |
+| Export every meeting as Markdown | Writes the memo, summary, and transcript to a local file. | Choose an export folder. |
+
+1. Select the starter.
+2. Connect the service or choose the local folder it needs.
+3. Review the trigger, source content, and result preview.
+4. Click **Save & enable**.
+
+An enabled starter runs after a meeting ends and the content it needs is ready. Disable it when you want to keep the setup without running it.
+
+## Check whether it ran
+
+The automation detail shows whether it is enabled and the result of its last run. A failed run includes a short error. Check the selected destination and reconnect the service when authorization has expired.
+
+For Markdown exports, confirm that the chosen folder still exists and is writable. The local export does not need Slack, Notion, or Linear access.
+
+## Choose Markdown export content
+
+In a Markdown export action, choose any combination of **Memo**, **Summary**, **Transcript**, and **Collect action items**. Keep at least one section selected.
+
+Leave **Filename** blank to use the meeting date and title, or enter a pattern such as `{date} {title}.md`. **Include meeting ID** adds a short ID suffix to distinguish similarly named meetings. Anarlog refuses to overwrite a file belonging to a different meeting or an unrelated file; choose another name if an export reports a collision.
+
+These options belong to desktop Automations. CLI `meetings export` still exports a complete meeting and uses the output path you provide; it does not accept these automation settings.
+
+## Build a custom workflow
+
+Click **+** in the Automations sidebar to start a workflow. Add a trigger, then stack actions the way you would in Zapier:
+
+1. Choose when it should run: after the meeting summary is ready, or after the meeting ends.
+2. Add one or more actions: Slack recap, Notion update, Linear issues, or Markdown export.
+3. Configure each destination.
+4. Click **Save & enable**.
+
+Enabled custom workflows run automatically, the same way starters do. Chat on the right can still help you refine the workflow; it is not required to make the automation run.
+
+Examples:
+
+- After the summary is ready, post to Slack and append the same recap to a Notion page.
+- After the meeting ends, export Markdown and create Linear issues from action items.
+
+<Warning>
+  Automations send meeting content to the destination you configure. Use only workspaces, channels, pages, teams, and folders that should receive that content.
+</Warning>

@@ -1,0 +1,57 @@
+---
+title: "Automate meeting capture"
+description: "Use calendar timing, microphone detection, and automatic stopping without losing control."
+---
+
+Anarlog can start an event-backed note at its scheduled time, remind you when another meeting app uses your microphone, and stop listening when the call ends.
+
+## Start scheduled meetings automatically
+
+Open **Settings → Meetings** and enable **Start when meeting begins**.
+
+When a calendar-backed note reaches its scheduled start time, Anarlog starts listening. This setting does not apply to ordinary notes without a calendar event.
+
+If another meeting is already recording, Anarlog skips the overlapping scheduled start. It does not queue that meeting to start after your current recording ends.
+
+Anarlog discards empty automatic captures while preserving the calendar note and any content recorded on another device.
+
+Enable **Join scheduled meetings** on the same page to open the meeting link when listening starts. That toggle stays disabled until **Start when meeting begins** is on.
+
+Keep Anarlog running and make sure microphone and system-audio access are allowed. See [Connect a calendar](/calendar) if your events are not visible.
+
+## Detect unscheduled calls
+
+Open **Settings → Notifications** and enable **Microphone detection**. Anarlog watches for sustained microphone activity and notifies you that a meeting may have started.
+
+Microphone detection is a reminder; it does not start recording by itself. Choose a detection delay from 5 seconds to 2 minutes, and exclude apps that should not trigger a meeting prompt.
+
+Microphone detection is available on macOS and Linux. On macOS, Accessibility permission is required to detect meeting apps and synchronize mute state; manage it under **Settings → Permissions**. On Linux, enable the meeting toggles under **Settings → Meetings** and allow assistive-technology access for the desktop session when prompted.
+
+## Stop when the call ends
+
+Under **Settings → Meetings**, enable **Stop when meeting ends**. Anarlog stops listening when the meeting app releases the microphone.
+
+This control is available on macOS and Linux.
+
+<Warning>
+  If you switch audio devices or use an app with unusual microphone behavior, automatic stop detection can misfire and end the recording early without warning. Check that the recording is still active before closing the meeting.
+</Warning>
+
+## Capture meeting chat
+
+On macOS and Linux, **Settings → Meetings** also includes:
+
+- **Post recording disclosure in meeting chat**, which tells participants when listening starts.
+- **Capture meeting chat in Memos**, which saves visible chat from supported meetings. On macOS this uses Accessibility; on Linux it uses assistive-technology access.
+
+These features are not available on Windows.
+
+<Note>
+  Posting a disclosure does not by itself confirm consent. Recording-consent rules depend on where you and the other participants are located; see [Record meetings](/meetings).
+</Note>
+
+## Keep controls nearby
+
+Enable **Show floating bar** under **Settings → Meetings** to keep compact recording controls visible while Anarlog listens.
+
+Event and microphone notifications can also respect your system's Do Not Disturb mode from **Settings → Notifications**.

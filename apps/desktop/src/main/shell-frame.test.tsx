@@ -1,0 +1,251 @@
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  currentTab: { type: "empty" } as { type: string } | null,
+  platform: "macos" as "linux" | "macos" | "windows",
+  leftsidebar: {
+    expanded: true,
+    setExpanded: vi.fn(),
+    setLocked: vi.fn(),
+  },
+}));
+
+vi.mock("@tauri-apps/plugin-os", () => ({
+  platform: () => mocks.platform,
+}));
+
+vi.mock("./body", () => ({
+  ClassicMainBody: () => <div data-testid="classic-main-body" />,
+}));
+
+vi.mock("./windows-title-bar", () => ({
+  WindowsTitleBar: ({
+    showSidebarTimelineChrome,
+  }: {
+    showSidebarTimelineChrome: boolean;
+  }) => (
+    <div
+      data-testid="windows-title-bar"
+      data-show-sidebar-timeline-chrome={String(showSidebarTimelineChrome)}
+    />
+  ),
+}));
+
+vi.mock("~/shared/main", () => ({
+  MainShellBodyFrame: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="main-shell-body-frame">{children}</div>
+  ),
+  MainShellScaffold: ({
+    children,
+    edgeToEdge,
+    mainSurfaceChrome,
+  }: {
+    children: React.ReactNode;
+    edgeToEdge?: boolean;
+    mainSurfaceChrome?: "default" | "top" | "top-borderless" | "left";
+  }) => (
+    <div
+      data-edge-to-edge={String(edgeToEdge)}
+      data-main-surface-chrome={mainSurfaceChrome}
+      data-testid="main-shell-scaffold"
+    >
+      {children}
+    </div>
+  ),
+}));
+
+vi.mock("~/contexts/shell", () => ({
+  useShell: () => ({
+    leftsidebar: mocks.leftsidebar,
+  }),
+}));
+
+vi.mock("~/devtools-bar", () => ({
+  DevtoolsStatusBar: () => <div data-testid="devtools-status-bar" />,
+}));
+
+vi.mock("~/sidebar/toast", () => ({
+  ToastNotifications: () => <div data-testid="toast-notifications" />,
+}));
+
+vi.mock("~/store/zustand/tabs", () => ({
+  useTabs: (
+    selector: (state: { currentTab: typeof mocks.currentTab }) => unknown,
+  ) => selector({ currentTab: mocks.currentTab }),
+}));
+
+import { ClassicMainShellFrame } from "./shell-frame";
+
+describe("ClassicMainShellFrame", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  beforeEach(() => {
+    mocks.currentTab = { type: "empty" };
+    mocks.platform = "macos";
+    mocks.leftsidebar.expanded = true;
+    mocks.leftsidebar.setExpanded.mockClear();
+    mocks.leftsidebar.setLocked.mockClear();
+  });
+
+  it.each([
+    "settings",
+    "calendar",
+    "contacts",
+    "templates",
+    "automations",
+    "folders",
+  ])("opens the %s sidebar and restores its previous state on exit", (type) => {
+    mocks.currentTab = { type };
+    mocks.leftsidebar.expanded = false;
+
+    const { rerender } = render(<ClassicMainShellFrame />);
+
+    expect(mocks.leftsidebar.setExpanded).toHaveBeenCalledWith(true);
+    expect(mocks.leftsidebar.setLocked).toHaveBeenCalledWith(true);
+
+    mocks.currentTab = { type: "empty" };
+    rerender(<ClassicMainShellFrame />);
+
+    expect(mocks.leftsidebar.setExpanded).toHaveBeenLastCalledWith(false);
+    expect(mocks.leftsidebar.setLocked).toHaveBeenLastCalledWith(false);
+  });
+
+  it("unlocks the custom sidebar when the shell unmounts", () => {
+    mocks.currentTab = { type: "calendar" };
+    mocks.leftsidebar.expanded = false;
+
+    const { unmount } = render(<ClassicMainShellFrame />);
+    unmount();
+
+    expect(mocks.leftsidebar.setExpanded).toHaveBeenLastCalledWith(false);
+    expect(mocks.leftsidebar.setLocked).toHaveBeenLastCalledWith(false);
+  });
+
+  it.each(["windows", "linux"] as const)(
+    "places the custom title bar above the shell on %s",
+    (runtimePlatform) => {
+      mocks.platform = runtimePlatform;
+
+      render(<ClassicMainShellFrame />);
+
+      const titleBar = screen.getByTestId("windows-title-bar");
+      const scaffold = screen.getByTestId("main-shell-scaffold");
+
+      expect(titleBar.compareDocumentPosition(scaffold)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+      expect(titleBar.parentElement?.className).toContain("flex-col");
+    },
+  );
+
+  it("keeps native macOS chrome without the custom title bar", () => {
+    render(<ClassicMainShellFrame />);
+
+    expect(screen.queryByTestId("windows-title-bar")).toBeNull();
+    expect(screen.getByTestId("main-shell-scaffold")).toBeTruthy();
+  });
+
+  it.each([
+    ["empty", true],
+    ["sessions", true],
+    ["changelog", true],
+    ["onboarding", false],
+    ["settings", false],
+    ["calendar", false],
+    ["contacts", false],
+    ["templates", false],
+    ["automations", false],
+    ["folders", false],
+  ])(
+    "passes timeline chrome visibility for %s to the title bar",
+    (type, visible) => {
+      mocks.platform = "windows";
+      mocks.currentTab = { type };
+
+      render(<ClassicMainShellFrame />);
+
+      expect(
+        screen
+          .getByTestId("windows-title-bar")
+          .getAttribute("data-show-sidebar-timeline-chrome"),
+      ).toBe(String(visible));
+    },
+  );
+
+  it("places the devtools status bar below the shell", () => {
+    render(<ClassicMainShellFrame />);
+
+    const scaffold = screen.getByTestId("main-shell-scaffold");
+    const statusBar = screen.getByTestId("devtools-status-bar");
+
+    expect(scaffold.compareDocumentPosition(statusBar)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(statusBar.parentElement?.className).toContain("flex-col");
+  });
+
+  it("uses left-edge main surface chrome while the sidebar timeline is expanded", () => {
+    render(<ClassicMainShellFrame />);
+
+    expect(screen.getByTestId("toast-notifications")).not.toBeNull();
+    expect(
+      screen
+        .getByTestId("main-shell-scaffold")
+        .getAttribute("data-main-surface-chrome"),
+    ).toBe("left");
+  });
+
+  it("uses borderless top-edge main surface chrome while the sidebar timeline is collapsed", () => {
+    mocks.leftsidebar.expanded = false;
+
+    render(<ClassicMainShellFrame />);
+
+    expect(screen.getByTestId("toast-notifications")).not.toBeNull();
+    expect(
+      screen
+        .getByTestId("main-shell-scaffold")
+        .getAttribute("data-main-surface-chrome"),
+    ).toBe("top-borderless");
+  });
+
+  it.each(["settings", "automations", "folders"])(
+    "uses left-edge main surface chrome for the %s custom sidebar",
+    (type) => {
+      mocks.currentTab = { type };
+
+      render(<ClassicMainShellFrame />);
+
+      expect(
+        screen
+          .getByTestId("main-shell-scaffold")
+          .getAttribute("data-main-surface-chrome"),
+      ).toBe("left");
+    },
+  );
+
+  it("keeps left-edge main surface chrome for changelog tabs while expanded", () => {
+    mocks.currentTab = { type: "changelog" };
+
+    render(<ClassicMainShellFrame />);
+
+    expect(
+      screen
+        .getByTestId("main-shell-scaffold")
+        .getAttribute("data-main-surface-chrome"),
+    ).toBe("left");
+  });
+
+  it("uses the full shell surface for onboarding", () => {
+    mocks.currentTab = { type: "onboarding" };
+
+    render(<ClassicMainShellFrame />);
+
+    const scaffold = screen.getByTestId("main-shell-scaffold");
+
+    expect(scaffold.getAttribute("data-edge-to-edge")).toBe("true");
+    expect(scaffold.getAttribute("data-main-surface-chrome")).toBeNull();
+  });
+});

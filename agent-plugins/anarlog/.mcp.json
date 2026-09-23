@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "anarlog": {
+      "type": "http",
+      "url": "https://api.anarlog.so/mcp"
+    }
+  }
+}

@@ -1,0 +1,1934 @@
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+
+import { beginCloudsyncActivity, endCloudsyncActivity } from "@anlg/plugin-db";
+
+import { BatchResponseProcessingError } from "./batch-response-processing-error";
+import type { SpeakerHintWithId, WordWithId } from "./types";
+import {
+  canRunBatchTranscription,
+  EMPTY_CURRENT_CAPTURE_TRANSCRIPT_ERROR_MESSAGE,
+  getBatchFallbackTarget,
+  getBatchProvider,
+  getSessionSpeakerCount,
+  isTerminalTranscriptionError,
+  reconcileRefinedSpeakerClusters,
+} from "./useRunBatch";
+import { useRunBatch } from "./useRunBatch";
+
+const {
+  startTranscriptionMock,
+  stopTranscriptionMock,
+  useListenerMock,
+  useSessionMock,
+  useSessionParticipantsMock,
+  useSTTConnectionMock,
+  useAuthMock,
+  getSessionForRequestMock,
+  refreshSessionMock,
+  useBillingAccessMock,
+  useConfigValueMock,
+  isSupportedLanguagesBatchMock,
+  toastWarningMock,
+  deleteProcessedAudioForRetentionMock,
+  markSessionAudioTranscriptionCompleteMock,
+  createTranscriptMock,
+  getTranscriptRecordMock,
+  getSessionTranscriptRecordsMock,
+  notifyBatchCompletedMock,
+  idMock,
+  archMock,
+  platformMock,
+} = vi.hoisted(() => ({
+  startTranscriptionMock: vi.fn(),
+  stopTranscriptionMock: vi.fn(),
+  useListenerMock: vi.fn(),
+  useSessionMock: vi.fn(),
+  useSessionParticipantsMock: vi.fn(),
+  useSTTConnectionMock: vi.fn(),
+  useAuthMock: vi.fn(),
+  getSessionForRequestMock: vi.fn(),
+  refreshSessionMock: vi.fn(),
+  useBillingAccessMock: vi.fn(),
+  useConfigValueMock: vi.fn(),
+  isSupportedLanguagesBatchMock: vi.fn(),
+  toastWarningMock: vi.fn(),
+  deleteProcessedAudioForRetentionMock: vi.fn(),
+  markSessionAudioTranscriptionCompleteMock: vi.fn(),
+  createTranscriptMock: vi.fn(),
+  getTranscriptRecordMock: vi.fn(),
+  getSessionTranscriptRecordsMock: vi.fn(),
+  notifyBatchCompletedMock: vi.fn(),
+  idMock: vi.fn(),
+  archMock: vi.fn(),
+  platformMock: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/plugin-os", () => ({
+  arch: archMock,
+  platform: platformMock,
+}));
+
+vi.mock("./contexts", () => ({
+  useListener: useListenerMock,
+}));
+
+vi.mock("./useKeywords", () => ({
+  getSessionKeywords: vi.fn(async () => []),
+  useKeywords: vi.fn(() => []),
+}));
+
+vi.mock("./useSTTConnection", () => ({
+  useSTTConnection: useSTTConnectionMock,
+}));
+
+vi.mock("@anlg/ui/components/ui/toast", () => ({
+  toast: {
+    warning: toastWarningMock,
+  },
+}));
+
+vi.mock("~/auth", () => ({
+  useAuth: useAuthMock,
+}));
+
+vi.mock("~/auth/billing-context", () => ({
+  useBillingAccess: useBillingAccessMock,
+}));
+
+vi.mock("~/env", () => ({
+  env: {
+    VITE_API_URL: "https://api.test",
+  },
+}));
+
+vi.mock("~/services/audio-retention", () => ({
+  deleteProcessedAudioForRetention: deleteProcessedAudioForRetentionMock,
+  normalizeAudioRetention: (value: unknown) =>
+    typeof value === "string" ? value : "forever",
+}));
+
+vi.mock("~/session/attachments", () => ({
+  markSessionAudioTranscriptionComplete:
+    markSessionAudioTranscriptionCompleteMock,
+}));
+
+vi.mock("~/session/queries", () => ({
+  useSession: useSessionMock,
+  useSessionParticipants: useSessionParticipantsMock,
+}));
+
+vi.mock("~/shared/config", () => ({
+  useConfigValue: useConfigValueMock,
+}));
+
+vi.mock("~/shared/utils", () => ({
+  id: idMock,
+}));
+
+vi.mock("~/stt/capabilities", () => {
+  const baseLanguageCode = (language: string) =>
+    language.split(/[-_]/)[0]?.toLowerCase() ?? "";
+
+  return {
+    getTranscriptionLanguages: (
+      mainLanguage: string | null | undefined,
+      spokenLanguages: readonly string[] | null | undefined,
+    ) => {
+      const seen = new Set<string>();
+      const languages: string[] = [];
+
+      for (const language of [mainLanguage, ...(spokenLanguages ?? [])]) {
+        if (!language) {
+          continue;
+        }
+
+        const baseCode = baseLanguageCode(language);
+        if (!baseCode || seen.has(baseCode)) {
+          continue;
+        }
+
+        seen.add(baseCode);
+        languages.push(language);
+      }
+
+      return languages;
+    },
+    isDesktopLocalSttAvailable: (
+      currentPlatform: string,
+      currentArch: string,
+    ) => currentPlatform === "macos" && currentArch === "aarch64",
+    isLocalFileSttModel: (
+      provider: string | null | undefined,
+      model: string | null | undefined,
+    ) => provider === "local_file" && model === "local-file",
+    isOnDeviceSttModel: (
+      provider: string | null | undefined,
+      model: string | null | undefined,
+    ) =>
+      typeof model === "string" &&
+      ((provider === "soniqo" && model.startsWith("soniqo-")) ||
+        (provider === "apple_speech" && model === "apple-speech") ||
+        (provider === "anarlog" &&
+          (model.startsWith("soniqo-") ||
+            model.startsWith("am-") ||
+            model.startsWith("Quantized")))),
+    isSupportedLanguagesBatch: isSupportedLanguagesBatchMock,
+  };
+});
+
+vi.mock("~/stt/queries", () => ({
+  createTranscript: createTranscriptMock,
+  getTranscriptRecord: getTranscriptRecordMock,
+  getSessionTranscriptRecords: getSessionTranscriptRecordsMock,
+}));
+
+vi.mock("~/store/zustand/listener/general-batch", () => ({
+  notifyBatchCompleted: notifyBatchCompletedMock,
+}));
+
+describe("getBatchProvider", () => {
+  test("maps pyannote to the batch transcription provider", () => {
+    expect(getBatchProvider("pyannote", "parakeet-tdt-0.6b-v3")).toBe(
+      "pyannote",
+    );
+  });
+
+  test("keeps openai mapped to the batch transcription provider", () => {
+    expect(getBatchProvider("openai", "gpt-4o-transcribe")).toBe("openai");
+  });
+
+  test("keeps cartesia mapped to the batch transcription provider", () => {
+    expect(getBatchProvider("cartesia", "ink-2")).toBe("cartesia");
+  });
+
+  test("maps Cohere to the batch transcription provider", () => {
+    expect(getBatchProvider("cohere", "cohere-transcribe-03-2026")).toBe(
+      "cohere",
+    );
+  });
+
+  test("maps Mistral to the batch transcription provider", () => {
+    expect(getBatchProvider("mistral", "voxtral-mini-2602")).toBe("mistral");
+  });
+
+  test.each([
+    ["aws_transcribe", "amazon-transcribe"],
+    ["azure_speech", "fast-transcription"],
+    ["google_cloud", "latest_long"],
+    ["google_generative_ai", "gemini-3.5-transcribe"],
+    ["groq", "whisper-large-v3-turbo"],
+    ["openrouter", "openai/gpt-4o-mini-transcribe"],
+    ["siliconflow", "FunAudioLLM/SenseVoiceSmall"],
+    ["zai", "glm-asr-2512"],
+    ["revai", "machine"],
+    ["speechmatics", "enhanced"],
+    ["together", "openai/whisper-large-v3"],
+    ["xai", "xai-stt"],
+    ["smallestai", "pulse"],
+    ["meta", "muse-voice-transcribe-1.0"],
+  ] as const)("maps %s to its direct batch provider", (provider, model) => {
+    expect(getBatchProvider(provider, model)).toBe(provider);
+  });
+
+  test("maps Cloudflare Workers AI to the Deepgram-compatible batch provider", () => {
+    expect(getBatchProvider("cloudflare_workers_ai", "nova-3")).toBe(
+      "deepgram",
+    );
+  });
+
+  test("maps custom endpoints to the Deepgram-compatible batch provider", () => {
+    expect(getBatchProvider("custom", "nova-3")).toBe("deepgram");
+  });
+
+  test("maps local soniqo models to soniqo batch provider", () => {
+    expect(getBatchProvider("anarlog", "soniqo-parakeet-batch")).toBe("soniqo");
+    expect(getBatchProvider("soniqo", "soniqo-parakeet-batch")).toBe("soniqo");
+  });
+
+  test("maps Apple Speech to its batch runtime provider", () => {
+    expect(getBatchProvider("apple_speech", "apple-speech")).toBe(
+      "applespeech",
+    );
+  });
+
+  test("maps local model files to whisper.cpp", () => {
+    expect(getBatchProvider("local_file", "local-file")).toBe("whispercpp");
+  });
+});
+
+describe("canRunBatchTranscription", () => {
+  test("allows post-capture batch so useRunBatch can choose a fallback", () => {
+    expect(canRunBatchTranscription(null)).toBe(true);
+    expect(
+      canRunBatchTranscription({
+        provider: "custom",
+        model: "realtime-only",
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("isTerminalTranscriptionError", () => {
+  test("stops retries after a provider response cannot be processed", () => {
+    expect(
+      isTerminalTranscriptionError(
+        new BatchResponseProcessingError(new Error("database is locked")),
+      ),
+    ).toBe(true);
+  });
+
+  test.each([
+    "Bad Request: failed to process audio: corrupt or unsupported data",
+    "No speech detected",
+    "Authentication failed: 401 Unauthorized",
+    EMPTY_CURRENT_CAPTURE_TRANSCRIPT_ERROR_MESSAGE,
+  ])("classifies permanent failures: %s", (message) => {
+    expect(isTerminalTranscriptionError(new Error(message))).toBe(true);
+  });
+
+  test.each([
+    "request timed out",
+    "429 Too Many Requests",
+    "503 Service Unavailable",
+    "database is locked",
+    "nova-3 is not available for batch transcription",
+    "STT connection is not available",
+  ])("leaves transient failures retryable: %s", (message) => {
+    expect(isTerminalTranscriptionError(new Error(message))).toBe(false);
+  });
+});
+
+describe("getBatchFallbackTarget", () => {
+  test("uses hosted cloud transcription for paid users with a session", () => {
+    expect(
+      getBatchFallbackTarget({
+        isPaid: true,
+        accessToken: "token",
+        apiBaseUrl: "https://api.test",
+        currentPlatform: "windows",
+        currentArch: "x86_64",
+      }),
+    ).toEqual({
+      provider: "anarlog",
+      model: "cloud",
+      baseUrl: "https://api.test/stt",
+      apiKey: "token",
+      label: "Pro cloud transcription",
+    });
+  });
+
+  test("uses local Soniqo batch transcription otherwise", () => {
+    expect(
+      getBatchFallbackTarget({
+        isPaid: false,
+        accessToken: null,
+        apiBaseUrl: "https://api.test",
+        currentPlatform: "macos",
+        currentArch: "aarch64",
+      }),
+    ).toEqual({
+      provider: "soniqo",
+      model: "soniqo-parakeet-batch",
+      baseUrl: "soniqo://local",
+      apiKey: "",
+      label: "Soniqo batch transcription",
+    });
+  });
+
+  test.each(["windows", "linux"] as const)(
+    "does not use local Soniqo on %s",
+    (currentPlatform) => {
+      expect(
+        getBatchFallbackTarget({
+          isPaid: false,
+          accessToken: null,
+          apiBaseUrl: "https://api.test",
+          currentPlatform,
+          currentArch: "x86_64",
+        }),
+      ).toBeNull();
+    },
+  );
+
+  test("does not use local Soniqo on Intel macOS", () => {
+    expect(
+      getBatchFallbackTarget({
+        isPaid: false,
+        accessToken: null,
+        apiBaseUrl: "https://api.test",
+        currentPlatform: "macos",
+        currentArch: "x86_64",
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("reconcileRefinedSpeakerClusters", () => {
+  test("collapses split batch clusters onto dominant live clusters", () => {
+    const source = {
+      id: "live-transcript",
+      ownerUserId: "user-1",
+      sessionId: "session-1",
+      startedAt: 0,
+      words: [
+        {
+          id: "live-lex-1",
+          text: "question",
+          start_ms: 0,
+          end_ms: 100,
+          channel: 1,
+        },
+        {
+          id: "live-george-1",
+          text: "answer",
+          start_ms: 100,
+          end_ms: 200,
+          channel: 1,
+        },
+        {
+          id: "live-lex-2",
+          text: "follow up",
+          start_ms: 200,
+          end_ms: 300,
+          channel: 1,
+        },
+        {
+          id: "live-george-2",
+          text: "response",
+          start_ms: 300,
+          end_ms: 400,
+          channel: 1,
+        },
+      ],
+      speakerHints: [
+        {
+          id: "live-lex-1-provider",
+          word_id: "live-lex-1",
+          type: "provider_speaker_index",
+          value: JSON.stringify({ channel: 1, speaker_index: 0 }),
+        },
+        {
+          id: "live-george-1-provider",
+          word_id: "live-george-1",
+          type: "provider_speaker_index",
+          value: JSON.stringify({ channel: 1, speaker_index: 1 }),
+        },
+        {
+          id: "live-lex-2-provider",
+          word_id: "live-lex-2",
+          type: "provider_speaker_index",
+          value: JSON.stringify({ channel: 1, speaker_index: 0 }),
+        },
+        {
+          id: "live-george-2-provider",
+          word_id: "live-george-2",
+          type: "provider_speaker_index",
+          value: JSON.stringify({ channel: 1, speaker_index: 1 }),
+        },
+      ],
+    } satisfies Parameters<typeof reconcileRefinedSpeakerClusters>[0];
+    const words = [
+      {
+        id: "batch-lex-primary",
+        text: "question",
+        start_ms: 0,
+        end_ms: 100,
+        channel: 1,
+      },
+      {
+        id: "batch-george-primary",
+        text: "answer",
+        start_ms: 100,
+        end_ms: 200,
+        channel: 1,
+      },
+      {
+        id: "batch-lex-split",
+        text: "follow up",
+        start_ms: 200,
+        end_ms: 300,
+        channel: 1,
+      },
+      {
+        id: "batch-george-split",
+        text: "response",
+        start_ms: 300,
+        end_ms: 400,
+        channel: 1,
+      },
+    ];
+    const hints = words.map((word, index) => ({
+      id: `${word.id}-provider`,
+      word_id: word.id,
+      type: "provider_speaker_index" as const,
+      value: JSON.stringify({
+        provider: "anarlog",
+        channel: 1,
+        speaker_index: index,
+      }),
+    }));
+
+    const result = reconcileRefinedSpeakerClusters(source, words, hints);
+
+    expect(result.map((hint) => JSON.parse(hint.value).speaker_index)).toEqual([
+      0, 1, 0, 1,
+    ]);
+  });
+
+  function word(
+    id: string,
+    start: number,
+    end: number,
+    channel = 1,
+  ): WordWithId {
+    return { id, text: id, start_ms: start, end_ms: end, channel };
+  }
+
+  function provider(word: WordWithId, speakerIndex: number): SpeakerHintWithId {
+    return {
+      id: `${word.id}:provider_speaker_index`,
+      word_id: word.id,
+      type: "provider_speaker_index",
+      value: JSON.stringify({
+        channel: word.channel,
+        speaker_index: speakerIndex,
+      }),
+    };
+  }
+
+  function assignment(value: Record<string, unknown>): SpeakerHintWithId {
+    return {
+      id: "old-a:user_speaker_assignment",
+      word_id: "old-a",
+      type: "user_speaker_assignment",
+      value: JSON.stringify({ human_id: "alice", ...value }),
+    };
+  }
+
+  function refineAssignments(
+    sourceWords: WordWithId[],
+    sourceHints: SpeakerHintWithId[],
+    words: WordWithId[],
+    hints: SpeakerHintWithId[],
+  ) {
+    const result = reconcileRefinedSpeakerClusters(
+      {
+        id: "live-transcript",
+        ownerUserId: "self",
+        sessionId: "session-1",
+        startedAt: 0,
+        words: sourceWords,
+        speakerHints: sourceHints,
+      },
+      words,
+      hints,
+    );
+    return result
+      .filter((hint) => hint.type === "user_speaker_assignment")
+      .map((hint) => {
+        const { extend_to_adjacent, ...value } = JSON.parse(hint.value);
+        expect(extend_to_adjacent).toBe(false);
+        return { word_id: hint.word_id, ...value };
+      });
+  }
+
+  const fullSpeaker = () =>
+    assignment({ scope: "speaker", channel: 1, speaker_index: 0 });
+
+  test.each([1, 2])(
+    "reanchors manual names to validated replacement words on channel %s",
+    (channel) => {
+      const source = word("old-a", 0, 100);
+      const next = word("new-a", 0, 100, channel);
+      expect(
+        refineAssignments(
+          [source],
+          [provider(source, 0), fullSpeaker()],
+          [next],
+          [provider(next, 7)],
+        ),
+      ).toEqual([
+        {
+          word_id: "new-a",
+          human_id: "alice",
+          scope: "segment",
+          word_ids: ["new-a"],
+        },
+      ]);
+    },
+  );
+
+  test("does not carry a name to a reused index without overlapping evidence", () => {
+    const source = word("old-a", 0, 100);
+    const next = word("new-a", 200, 300);
+    expect(
+      refineAssignments(
+        [source],
+        [provider(source, 0), fullSpeaker()],
+        [next],
+        [provider(next, 0)],
+      ),
+    ).toEqual([]);
+  });
+
+  test("does not name an ambiguous cluster that reused an assigned index", () => {
+    const sources = [word("old-a", 0, 100), word("old-b", 100, 200)];
+    const next = word("new-ab", 0, 200);
+    expect(
+      refineAssignments(
+        sources,
+        [provider(sources[0], 0), provider(sources[1], 1), fullSpeaker()],
+        [next],
+        [provider(next, 0)],
+      ),
+    ).toEqual([]);
+  });
+
+  test("does not infer names from simultaneous mic and remote speech after downmixing", () => {
+    const sources = [word("old-a", 0, 100), word("mic", 0, 100, 0)];
+    const next = word("mixed", 0, 100, 2);
+    expect(
+      refineAssignments(
+        sources,
+        [provider(sources[0], 0), provider(sources[1], 0), fullSpeaker()],
+        [next],
+        [provider(next, 0)],
+      ),
+    ).toEqual([]);
+  });
+
+  test("keeps stereo channels separate when simultaneous words remain separate", () => {
+    const sources = [word("old-a", 0, 100), word("mic", 0, 100, 0)];
+    const next = word("remote", 0, 100);
+    expect(
+      refineAssignments(
+        sources,
+        [provider(sources[0], 0), provider(sources[1], 0), fullSpeaker()],
+        [next],
+        [provider(next, 0)],
+      ),
+    ).toEqual([
+      {
+        word_id: "remote",
+        human_id: "alice",
+        scope: "segment",
+        word_ids: ["remote"],
+      },
+    ]);
+  });
+
+  test("remaps a segment override to replacement word IDs without extending it", () => {
+    const sources = [word("old-a", 0, 100), word("old-b", 100, 200)];
+    const next = [
+      word("new-a", 0, 50),
+      word("new-b", 50, 100),
+      word("new-c", 100, 200),
+    ];
+    expect(
+      refineAssignments(
+        sources,
+        [assignment({ scope: "segment", word_ids: ["old-a"] })],
+        next,
+        [],
+      ),
+    ).toEqual([
+      {
+        word_id: "new-a",
+        human_id: "alice",
+        scope: "segment",
+        word_ids: ["new-a", "new-b"],
+      },
+    ]);
+  });
+
+  test("keeps segment overrides ahead of full-speaker names during refinement", () => {
+    const sources = [word("old-a", 0, 100), word("old-b", 100, 200)];
+    const next = [word("new-a", 0, 100), word("new-b", 100, 200)];
+    const hints = [
+      ...sources.map((word) => provider(word, 0)),
+      assignment({ human_id: "bob", scope: "segment", word_ids: ["old-b"] }),
+      fullSpeaker(),
+    ];
+    expect(
+      refineAssignments(
+        sources,
+        hints,
+        next,
+        next.map((word) => provider(word, 0)),
+      ),
+    ).toEqual([
+      {
+        word_id: "new-a",
+        human_id: "alice",
+        scope: "segment",
+        word_ids: ["new-a"],
+      },
+      {
+        word_id: "new-b",
+        human_id: "bob",
+        scope: "segment",
+        word_ids: ["new-b"],
+      },
+    ]);
+  });
+
+  test("requires substantial timing coverage before carrying a manual name", () => {
+    const source = word("old-a", 0, 100);
+    const next = word("new-a", 0, 1_000);
+    expect(
+      refineAssignments(
+        [source],
+        [provider(source, 0), fullSpeaker()],
+        [next],
+        [provider(next, 0)],
+      ),
+    ).toEqual([]);
+  });
+
+  test("does not treat a legacy mixed-channel hint as one identified person", () => {
+    const source = word("old-a", 0, 100, 2);
+    const next = word("new-a", 0, 100, 2);
+    expect(refineAssignments([source], [assignment({})], [next], [])).toEqual(
+      [],
+    );
+  });
+
+  test("keeps an ambiguous batch cluster unchanged", () => {
+    const source = {
+      id: "live-transcript",
+      ownerUserId: "user-1",
+      sessionId: "session-1",
+      startedAt: 0,
+      words: [
+        {
+          id: "live-a",
+          text: "one",
+          start_ms: 0,
+          end_ms: 100,
+          channel: 1,
+        },
+        {
+          id: "live-b",
+          text: "two",
+          start_ms: 100,
+          end_ms: 200,
+          channel: 1,
+        },
+      ],
+      speakerHints: [
+        {
+          id: "live-a-provider",
+          word_id: "live-a",
+          type: "provider_speaker_index",
+          value: JSON.stringify({ channel: 1, speaker_index: 0 }),
+        },
+        {
+          id: "live-b-provider",
+          word_id: "live-b",
+          type: "provider_speaker_index",
+          value: JSON.stringify({ channel: 1, speaker_index: 1 }),
+        },
+      ],
+    } satisfies Parameters<typeof reconcileRefinedSpeakerClusters>[0];
+    const words = [
+      {
+        id: "batch-ambiguous",
+        text: "one two",
+        start_ms: 0,
+        end_ms: 200,
+        channel: 1,
+      },
+    ];
+    const hints = [
+      {
+        id: "batch-ambiguous-provider",
+        word_id: "batch-ambiguous",
+        type: "provider_speaker_index" as const,
+        value: JSON.stringify({ channel: 1, speaker_index: 4 }),
+      },
+    ];
+
+    const result = reconcileRefinedSpeakerClusters(source, words, hints);
+
+    expect(JSON.parse(result[0].value).speaker_index).toBe(4);
+  });
+
+  test("moves an unmapped batch cluster that collides with a live cluster", () => {
+    const source = {
+      id: "live-transcript",
+      ownerUserId: "user-1",
+      sessionId: "session-1",
+      startedAt: 0,
+      words: [
+        {
+          id: "live-speaker",
+          text: "mapped",
+          start_ms: 0,
+          end_ms: 100,
+          channel: 1,
+        },
+      ],
+      speakerHints: [
+        {
+          id: "live-speaker-provider",
+          word_id: "live-speaker",
+          type: "provider_speaker_index",
+          value: JSON.stringify({ channel: 1, speaker_index: 1 }),
+        },
+      ],
+    } satisfies Parameters<typeof reconcileRefinedSpeakerClusters>[0];
+    const words = [
+      {
+        id: "batch-mapped",
+        text: "mapped",
+        start_ms: 0,
+        end_ms: 100,
+        channel: 1,
+      },
+      {
+        id: "batch-unmapped",
+        text: "unmapped",
+        start_ms: 200,
+        end_ms: 300,
+        channel: 1,
+      },
+    ];
+    const hints = [
+      {
+        id: "batch-mapped-provider",
+        word_id: "batch-mapped",
+        type: "provider_speaker_index" as const,
+        value: JSON.stringify({ channel: 1, speaker_index: 0 }),
+      },
+      {
+        id: "batch-unmapped-provider",
+        word_id: "batch-unmapped",
+        type: "provider_speaker_index" as const,
+        value: JSON.stringify({ channel: 1, speaker_index: 1 }),
+      },
+    ];
+
+    const result = reconcileRefinedSpeakerClusters(source, words, hints);
+
+    expect(result.map((hint) => JSON.parse(hint.value).speaker_index)).toEqual([
+      1, 2,
+    ]);
+  });
+});
+
+describe("useRunBatch", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stopTranscriptionMock.mockResolvedValue(undefined);
+    archMock.mockReturnValue("aarch64");
+    platformMock.mockReturnValue("macos");
+
+    let nextId = 0;
+    idMock.mockImplementation(() => `generated-${++nextId}`);
+    createTranscriptMock.mockResolvedValue(undefined);
+    getTranscriptRecordMock.mockResolvedValue(null);
+    getSessionTranscriptRecordsMock.mockResolvedValue([]);
+    notifyBatchCompletedMock.mockResolvedValue(undefined);
+    deleteProcessedAudioForRetentionMock.mockResolvedValue(undefined);
+    markSessionAudioTranscriptionCompleteMock.mockResolvedValue(undefined);
+    isSupportedLanguagesBatchMock.mockResolvedValue(true);
+    useListenerMock.mockImplementation((selector) =>
+      selector({
+        startTranscription: startTranscriptionMock,
+        stopTranscription: stopTranscriptionMock,
+      }),
+    );
+    useSessionMock.mockReturnValue({
+      id: "session-1",
+      user_id: "user-1",
+      raw_md: "Existing memo",
+    });
+    useSessionParticipantsMock.mockReturnValue([]);
+    useSTTConnectionMock.mockReturnValue({
+      conn: {
+        provider: "deepgram",
+        model: "nova-3",
+        baseUrl: "https://api.deepgram.com/v1/listen",
+        apiKey: "test-key",
+      },
+    });
+    useAuthMock.mockReturnValue({
+      session: {
+        access_token: "paid-token",
+        user: { id: "user-1" },
+      },
+      getSessionForRequest: getSessionForRequestMock,
+      refreshSession: refreshSessionMock,
+    });
+    getSessionForRequestMock.mockResolvedValue({
+      access_token: "paid-token",
+    });
+    refreshSessionMock.mockResolvedValue(null);
+    useBillingAccessMock.mockReturnValue({
+      isPaid: false,
+    });
+    useConfigValueMock.mockImplementation((key) =>
+      key === "ai_language" ? "en" : [],
+    );
+  });
+
+  test("does not start a dictation transcription after cancellation", async () => {
+    const abort = new AbortController();
+    abort.abort();
+    const { result } = renderHook(() => useRunBatch("dictation"));
+    await expect(
+      result.current("/tmp/voice.wav", { signal: abort.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(startTranscriptionMock).not.toHaveBeenCalled();
+  });
+
+  test("stops after cancelled auth preflight without starting transcription", async () => {
+    const abort = new AbortController();
+    useBillingAccessMock.mockReturnValue({ isPaid: true });
+    let finish!: (value: null) => void;
+    getSessionForRequestMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const { result } = renderHook(() => useRunBatch("dictation"));
+    const run = result.current("/tmp/voice.wav", { signal: abort.signal });
+    const rejected = expect(run).rejects.toMatchObject({ name: "AbortError" });
+    await waitFor(() => expect(getSessionForRequestMock).toHaveBeenCalled());
+    abort.abort();
+    finish(null);
+    await rejected;
+    expect(startTranscriptionMock).not.toHaveBeenCalled();
+  });
+
+  test("cancels the active provider and never retries authentication after abort", async () => {
+    const abort = new AbortController();
+    useSTTConnectionMock.mockReturnValue({
+      conn: {
+        provider: "anarlog",
+        model: "cloud",
+        baseUrl: "https://api.test/stt",
+        apiKey: "stale",
+      },
+    });
+    let fail!: (reason: Error) => void;
+    startTranscriptionMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          fail = reject;
+        }),
+    );
+    const { result } = renderHook(() => useRunBatch("dictation"));
+    const run = result.current("/tmp/voice.wav", { signal: abort.signal });
+    const rejected = expect(run).rejects.toMatchObject({ name: "AbortError" });
+    await waitFor(() => expect(startTranscriptionMock).toHaveBeenCalledOnce());
+    abort.abort();
+    const persist = startTranscriptionMock.mock.calls[0]?.[1]?.handlePersist;
+    expect(() =>
+      persist?.(
+        [{ text: "cancelled", start_ms: 0, end_ms: 100, channel: 0 }],
+        [],
+      ),
+    ).not.toThrow();
+    fail(
+      new Error(
+        "Authentication failed. Please check your API key in settings.",
+      ),
+    );
+    await rejected;
+    expect(stopTranscriptionMock).toHaveBeenCalledWith("dictation");
+    expect(refreshSessionMock).not.toHaveBeenCalled();
+    expect(startTranscriptionMock).toHaveBeenCalledOnce();
+    expect(createTranscriptMock).not.toHaveBeenCalled();
+  });
+
+  test("retries cancellation after native startup finishes", async () => {
+    const abort = new AbortController();
+    let started!: () => void;
+    startTranscriptionMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          started = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useRunBatch("dictation"));
+    const run = result.current("/tmp/voice.wav", { signal: abort.signal });
+    const rejected = expect(run).rejects.toMatchObject({ name: "AbortError" });
+    await waitFor(() => expect(startTranscriptionMock).toHaveBeenCalledOnce());
+    abort.abort();
+    expect(stopTranscriptionMock).not.toHaveBeenCalled();
+    started();
+    await rejected;
+    expect(stopTranscriptionMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("promotes the complete streamed transcript before retention", async () => {
+    let finishTranscription: (() => void) | undefined;
+    startTranscriptionMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishTranscription = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() => useRunBatch("session-1"));
+    const run = result.current("/tmp/session.wav", {
+      promotion: { scope: "whole_session" },
+    });
+
+    await waitFor(() => {
+      expect(startTranscriptionMock).toHaveBeenCalledTimes(1);
+    });
+    const persist = startTranscriptionMock.mock.calls[0]?.[1]?.handlePersist;
+    persist?.([{ text: "hello", start_ms: 0, end_ms: 100, channel: 0 }], []);
+    persist?.([{ text: "world", start_ms: 100, end_ms: 200, channel: 0 }], []);
+
+    expect(createTranscriptMock).not.toHaveBeenCalled();
+    expect(deleteProcessedAudioForRetentionMock).not.toHaveBeenCalled();
+    expect(getSessionTranscriptRecordsMock).not.toHaveBeenCalled();
+    expect(notifyBatchCompletedMock).not.toHaveBeenCalled();
+
+    finishTranscription?.();
+    await act(async () => await run);
+
+    expect(beginCloudsyncActivity).toHaveBeenCalledWith(
+      "transcription",
+      "session-1:generated-1",
+    );
+    expect(createTranscriptMock).toHaveBeenCalledTimes(1);
+    expect(createTranscriptMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        replaceSession: true,
+        words: [
+          expect.objectContaining({ text: "hello" }),
+          expect.objectContaining({ text: "world" }),
+        ],
+      }),
+    );
+    expect(markSessionAudioTranscriptionCompleteMock).toHaveBeenCalledWith(
+      "session-1",
+    );
+    expect(deleteProcessedAudioForRetentionMock).toHaveBeenCalledTimes(1);
+    expect(startTranscriptionMock.mock.calls[0]?.[1]?.notifyOnCompletion).toBe(
+      false,
+    );
+    expect(notifyBatchCompletedMock).toHaveBeenCalledWith("session-1");
+    expect(createTranscriptMock.mock.invocationCallOrder[0]).toBeLessThan(
+      notifyBatchCompletedMock.mock.invocationCallOrder[0],
+    );
+    expect(
+      markSessionAudioTranscriptionCompleteMock.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      deleteProcessedAudioForRetentionMock.mock.invocationCallOrder[0],
+    );
+    expect(
+      deleteProcessedAudioForRetentionMock.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      vi.mocked(endCloudsyncActivity).mock.invocationCallOrder[0]!,
+    );
+  });
+
+  test("defers audio finalization for capture recovery", async () => {
+    startTranscriptionMock.mockImplementation(async (_params, options) => {
+      options.handlePersist(
+        [{ text: "recovered", start_ms: 0, end_ms: 100, channel: 0 }],
+        [],
+      );
+    });
+
+    const { result } = renderHook(() => useRunBatch("session-1"));
+
+    await act(async () => {
+      await result.current("/tmp/session.wav", {
+        deferAudioFinalization: true,
+        promotion: { scope: "whole_session" },
+      });
+    });
+
+    expect(createTranscriptMock).toHaveBeenCalledOnce();
+    expect(markSessionAudioTranscriptionCompleteMock).not.toHaveBeenCalled();
+    expect(deleteProcessedAudioForRetentionMock).not.toHaveBeenCalled();
+  });
+
+  test("repairs a chunk separately from live capture and waits for its database commit", async () => {
+    startTranscriptionMock.mockImplementation(async (_params, options) => {
+      options.handlePersist(
+        [{ text: "recovered", start_ms: 0, end_ms: 100, channel: 0 }],
+        [],
+      );
+    });
+    let commit!: () => void;
+    const persist = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          commit = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useRunBatch("session-1"));
+    let completed = false;
+    const run = result
+      .current("/tmp/chunk.mp3", { recovery: { persist } })
+      .then(() => {
+        completed = true;
+      });
+    await waitFor(() => expect(persist).toHaveBeenCalledOnce());
+    expect(startTranscriptionMock.mock.calls[0]?.[0]).toMatchObject({
+      session_id: "session-1:recovery",
+    });
+    expect(completed).toBe(false);
+    expect(createTranscriptMock).not.toHaveBeenCalled();
+    expect(deleteProcessedAudioForRetentionMock).not.toHaveBeenCalled();
+    commit();
+    await act(async () => await run);
+    expect(completed).toBe(true);
+  });
+
+  test("cancels only the background repair when its capture ends", async () => {
+    const abort = new AbortController();
+    let finish!: () => void;
+    startTranscriptionMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const persist = vi.fn();
+    const { result } = renderHook(() => useRunBatch("session-1"));
+    const run = result.current("/tmp/chunk.mp3", {
+      signal: abort.signal,
+      recovery: { persist },
+    });
+    const rejected = expect(run).rejects.toMatchObject({ name: "AbortError" });
+    await waitFor(() => expect(startTranscriptionMock).toHaveBeenCalledOnce());
+    abort.abort();
+    finish();
+    await rejected;
+    expect(stopTranscriptionMock).toHaveBeenCalledWith("session-1:recovery");
+    expect(stopTranscriptionMock).not.toHaveBeenCalledWith("session-1");
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  test("does not make completed provider work retryable when persistence fails", async () => {
+    startTranscriptionMock.mockImplementation(async (_params, options) => {
+      options.handlePersist(
+        [{ text: "recovered", start_ms: 0, end_ms: 100, channel: 0 }],
+        [],
+      );
+    });
+    createTranscriptMock.mockRejectedValueOnce(new Error("disk write failed"));
+
+    const { result } = renderHook(() => useRunBatch("session-1"));
+    let processingError: unknown;
+
+    await act(async () => {
+      try {
+        await result.current("/tmp/session.wav", {
+          deferAudioFinalization: true,
+          promotion: { scope: "whole_session" },
+        });
+      } catch (error) {
+        processingError = error;
+      }
+    });
+
+    expect(processingError).toBeInstanceOf(BatchResponseProcessingError);
+    expect(isTerminalTranscriptionError(processingError)).toBe(true);
+    expect(startTranscriptionMock).toHaveBeenCalledOnce();
+    expect(deleteProcessedAudioForRetentionMock).not.toHaveBeenCalled();
+  });
+
+  test("does not save for custom batch persist handlers", async () => {
+    const handlePersist = vi.fn();
+    startTranscriptionMock.mockImplementation(async (_params, options) => {
+      options.handlePersist(
+        [{ text: "custom", start_ms: 0, end_ms: 100, channel: 0 }],
+        [],
+      );
+    });
+
+    const { result } = renderHook(() => useRunBatch("session-1"));
+
+    await act(async () => {
+      await result.current("/tmp/session.wav", { handlePersist });
+    });
+
+    expect(handlePersist).toHaveBeenCalledTimes(1);
+    expect(createTranscriptMock).not.toHaveBeenCalled();
+  });
+
+  test("promotes post-stop batch by replacing the live current capture", async () => {
+    startTranscriptionMock.mockImplementation(async (_params, options) => {
+      options.handlePersist(
+        [
+          { text: "old", start_ms: 10_000, end_ms: 10_500, channel: 0 },
+          { text: "new", start_ms: 60_100, end_ms: 60_500, channel: 0 },
+        ],
+        [
+          {
+            wordIndex: 0,
+            data: {
+              type: "provider_speaker_index",
+              speaker_index: 0,
+            },
+          },
+          {
+            wordIndex: 1,
+            data: {
+              type: "provider_speaker_index",
+              speaker_index: 1,
+            },
+          },
+        ],
+        { mode: "replace" },
+      );
+    });
+
+    const { result } = renderHook(() => useRunBatch("session-1"));
+
+    await act(async () => {
+      await result.current("/tmp/session.wav", {
+        promotion: {
+          scope: "current_capture",
+          audioOffsetMs: 60_000,
+          replaceTranscriptId: "transcript-current-live",
+          startedAt: 123_000,
+        },
+      });
+    });
+
+    expect(createTranscriptMock).toHaveBeenCalledOnce();
+    expect(createTranscriptMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        replaceSession: false,
+        replaceTranscriptId: "transcript-current-live",
+        startedAt: 123_000,
+        words: [
+          expect.objectContaining({
+            text: "new",
+            start_ms: 100,
+            end_ms: 500,
+          }),
+        ],
+        speakerHints: [
+          expect.objectContaining({
+            value: expect.stringContaining('"speaker_index":1'),
+          }),
+        ],
+      }),
+    );
+  });
+
+  test("does not carry legacy inferred identities into a refined capture", async () => {
+    getTranscriptRecordMock.mockResolvedValue({
+      id: "transcript-current-live",
+      ownerUserId: "user-1",
+      sessionId: "session-1",
+      startedAt: 123_000,
+      words: [
+        {
+          id: "live-word",
+          text: "answer",
+          start_ms: 100,
+          end_ms: 500,
+          channel: 1,
+        },
+      ],
+      speakerHints: [
+        {
+          id: "live-provider",
+          word_id: "live-word",
+          type: "provider_speaker_index",
+          value: JSON.stringify({ channel: 1, speaker_index: 0 }),
+        },
+        {
+          id: "live-inferred-identity",
+          word_id: "live-word",
+          type: "automatic_speaker_assignment",
+          value: JSON.stringify({
+            human_id: "human-1",
+            confidence: 0.93,
+            source: "enhance",
+          }),
+        },
+      ],
+    });
+    startTranscriptionMock.mockImplementation(async (_params, options) => {
+      options.handlePersist(
+        [
+          {
+            text: "answer",
+            start_ms: 60_100,
+            end_ms: 60_500,
+            channel: 1,
+          },
+        ],
+        [
+          {
+            wordIndex: 0,
+            data: {
+              type: "provider_speaker_index",
+              channel: 1,
+              speaker_index: 3,
+            },
+          },
+        ],
+        { mode: "replace" },
+      );
+    });
+
+    const { result } = renderHook(() => useRunBatch("session-1"));
+    await act(async () => {
+      await result.current("/tmp/session.wav", {
+        promotion: {
+          scope: "current_capture",
+          audioOffsetMs: 60_000,
+          replaceTranscriptId: "transcript-current-live",
+          startedAt: 123_000,
+        },
+      });
+    });
+
+    const speakerHints = createTranscriptMock.mock.calls[0]?.[0].speakerHints;
+    expect(speakerHints).toHaveLength(1);
+    expect(speakerHints[0]).toMatchObject({
+      type: "provider_speaker_index",
+    });
+  });
+
+  test.each(["current_capture", "whole_session"] as const)(
+    "keeps the saved transcript and audio when %s processing returns only a few lines",
+    async (scope) => {
+      const saved = {
+        id: "transcript-current-live",
+        sessionId: "session-1",
+        ownerUserId: "user-1",
+        startedAt: 123_000,
+        words: Array.from({ length: 300 }, (_, index) => ({
+          id: `live-${index}`,
+          text: index % 2 ? "megbeszélés" : "meeting",
+          start_ms: index * 6_000,
+          end_ms: index * 6_000 + 500,
+          channel: 0,
+        })),
+        speakerHints: [],
+      };
+      getTranscriptRecordMock.mockResolvedValue(saved);
+      getSessionTranscriptRecordsMock.mockResolvedValue([saved]);
+      startTranscriptionMock.mockImplementation(async (_params, options) => {
+        options.handlePersist(
+          [
+            ...(scope === "current_capture"
+              ? [
+                  {
+                    text: "earlier capture ".repeat(1_000),
+                    start_ms: 0,
+                    end_ms: 59_000,
+                    channel: 0,
+                  },
+                ]
+              : []),
+            {
+              text: "Thank you for the meeting.",
+              start_ms: 60_100,
+              end_ms: 61_000,
+              channel: 0,
+            },
+          ],
+          [],
+          { mode: "replace" },
+        );
+      });
+
+      const { result } = renderHook(() => useRunBatch("session-1"));
+      let error: unknown;
+      await act(async () => {
+        try {
+          await result.current("/tmp/session.wav", {
+            promotion:
+              scope === "current_capture"
+                ? {
+                    scope,
+                    audioOffsetMs: 60_000,
+                    replaceTranscriptId: saved.id,
+                    startedAt: saved.startedAt,
+                  }
+                : { scope },
+          });
+        } catch (caught) {
+          error = caught;
+        }
+      });
+
+      expect(error).toMatchObject({
+        message:
+          "The new transcription returned much less text. Your saved transcript and recording were kept. Try transcribing again.",
+      });
+      expect(isTerminalTranscriptionError(error)).toBe(true);
+      expect(createTranscriptMock).not.toHaveBeenCalled();
+      expect(markSessionAudioTranscriptionCompleteMock).not.toHaveBeenCalled();
+      expect(deleteProcessedAudioForRetentionMock).not.toHaveBeenCalled();
+      expect(notifyBatchCompletedMock).not.toHaveBeenCalled();
+      expect(startTranscriptionMock).toHaveBeenCalledOnce();
+    },
+  );
+
+  test.each([
+    {
+      name: "provider tokenization changes",
+      previousText: "meeting ".repeat(100),
+      replacementText: "meeting ".repeat(100),
+    },
+    {
+      name: "languages without spaces",
+      previousText: "会议记录".repeat(100),
+      replacementText: "会议记录".repeat(100),
+    },
+    {
+      name: "ordinary corrections",
+      previousText: "meeting ".repeat(100),
+      replacementText: "meeting ".repeat(70),
+    },
+    {
+      name: "small captures",
+      previousText: "meeting ".repeat(10),
+      replacementText: "hello",
+    },
+  ])(
+    "accepts $name without comparing earlier captures",
+    async ({ previousText, replacementText }) => {
+      getTranscriptRecordMock.mockResolvedValue({
+        id: "live-current",
+        sessionId: "session-1",
+        ownerUserId: "user-1",
+        startedAt: 123_000,
+        words: [
+          { id: "empty", channel: 0, start_ms: 0, end_ms: 0 },
+          ...previousText.split("").map((text, index) => ({
+            id: `live-${index}`,
+            text,
+            channel: 0,
+            start_ms: 0,
+            end_ms: 100,
+          })),
+        ],
+        speakerHints: [],
+      });
+      startTranscriptionMock.mockImplementation(async (_params, options) => {
+        options.handlePersist(
+          [
+            {
+              text: "An earlier capture ".repeat(1_000),
+              start_ms: 0,
+              end_ms: 59_000,
+              channel: 0,
+            },
+            {
+              text: replacementText,
+              start_ms: 60_000,
+              end_ms: 61_000,
+              channel: 0,
+            },
+          ],
+          [],
+          { mode: "replace" },
+        );
+      });
+
+      const { result } = renderHook(() => useRunBatch("session-1"));
+      await act(async () => {
+        await result.current("/tmp/session.wav", {
+          promotion: {
+            scope: "current_capture",
+            audioOffsetMs: 60_000,
+            replaceTranscriptId: "live-current",
+            startedAt: 123_000,
+          },
+        });
+      });
+
+      expect(getSessionTranscriptRecordsMock).not.toHaveBeenCalled();
+      expect(createTranscriptMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          replaceTranscriptId: "live-current",
+          words: [
+            expect.objectContaining({
+              text: replacementText,
+              start_ms: 0,
+              end_ms: 1_000,
+            }),
+          ],
+        }),
+      );
+      expect(markSessionAudioTranscriptionCompleteMock).toHaveBeenCalledOnce();
+    },
+  );
+
+  test.each(["current_capture", "whole_session"] as const)(
+    "keeps existing data when the %s transcript cannot be checked",
+    async (scope) => {
+      getTranscriptRecordMock.mockRejectedValue(new Error("read failed"));
+      getSessionTranscriptRecordsMock.mockRejectedValue(
+        new Error("read failed"),
+      );
+      startTranscriptionMock.mockImplementation(async (_params, options) => {
+        options.handlePersist(
+          [{ text: "replacement", start_ms: 0, end_ms: 100, channel: 0 }],
+          [],
+        );
+      });
+      const { result } = renderHook(() => useRunBatch("session-1"));
+
+      await expect(
+        act(async () => {
+          await result.current("/tmp/session.wav", {
+            promotion:
+              scope === "current_capture"
+                ? {
+                    scope,
+                    audioOffsetMs: 0,
+                    replaceTranscriptId: "live-current",
+                    startedAt: 123_000,
+                  }
+                : { scope },
+          });
+        }),
+      ).rejects.toBeInstanceOf(BatchResponseProcessingError);
+
+      expect(createTranscriptMock).not.toHaveBeenCalled();
+      expect(markSessionAudioTranscriptionCompleteMock).not.toHaveBeenCalled();
+      expect(deleteProcessedAudioForRetentionMock).not.toHaveBeenCalled();
+      expect(notifyBatchCompletedMock).not.toHaveBeenCalled();
+    },
+  );
+
+  test("retains recovery audio when the batch has no current-capture words", async () => {
+    startTranscriptionMock.mockImplementation(async (_params, options) => {
+      options.handlePersist(
+        [{ text: "old", start_ms: 10_000, end_ms: 10_500, channel: 0 }],
+        [],
+        { mode: "replace" },
+      );
+    });
+
+    const { result } = renderHook(() => useRunBatch("session-1"));
+
+    await expect(
+      act(async () => {
+        await result.current("/tmp/session.wav", {
+          promotion: {
+            scope: "current_capture",
+            audioOffsetMs: 60_000,
+            replaceTranscriptId: "transcript-current-live",
+            startedAt: 123_000,
+          },
+        });
+      }),
+    ).rejects.toThrow(EMPTY_CURRENT_CAPTURE_TRANSCRIPT_ERROR_MESSAGE);
+
+    expect(createTranscriptMock).not.toHaveBeenCalled();
+    expect(markSessionAudioTranscriptionCompleteMock).not.toHaveBeenCalled();
+    expect(deleteProcessedAudioForRetentionMock).not.toHaveBeenCalled();
+  });
+
+  test("retains recovery audio when the batch emits no words", async () => {
+    startTranscriptionMock.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useRunBatch("session-1"));
+
+    await expect(
+      act(async () => {
+        await result.current("/tmp/session.wav", {
+          promotion: {
+            scope: "current_capture",
+            audioOffsetMs: 60_000,
+            replaceTranscriptId: "transcript-current-live",
+            startedAt: 123_000,
+          },
+        });
+      }),
+    ).rejects.toThrow(EMPTY_CURRENT_CAPTURE_TRANSCRIPT_ERROR_MESSAGE);
+
+    expect(createTranscriptMock).not.toHaveBeenCalled();
+    expect(markSessionAudioTranscriptionCompleteMock).not.toHaveBeenCalled();
+    expect(deleteProcessedAudioForRetentionMock).not.toHaveBeenCalled();
+  });
+
+  test("does not replace the live transcript when batch transcription fails", async () => {
+    startTranscriptionMock.mockImplementation(async (_params, options) => {
+      options.handlePersist(
+        [{ text: "partial", start_ms: 0, end_ms: 100, channel: 0 }],
+        [],
+      );
+      throw new Error("provider failed");
+    });
+
+    const { result } = renderHook(() => useRunBatch("session-1"));
+
+    await expect(
+      act(async () => {
+        await result.current("/tmp/session.wav");
+      }),
+    ).rejects.toThrow("provider failed");
+
+    expect(createTranscriptMock).not.toHaveBeenCalled();
+    expect(deleteProcessedAudioForRetentionMock).not.toHaveBeenCalled();
+  });
+
+  test("passes selected transcription languages to batch transcription", async () => {
+    useSTTConnectionMock.mockReturnValue({
+      conn: {
+        provider: "anarlog",
+        model: "soniqo-parakeet-batch",
+        baseUrl: "soniqo://local",
+        apiKey: "",
+      },
+    });
+    useConfigValueMock.mockImplementation((key) =>
+      key === "ai_language" ? "de" : ["en"],
+    );
+    startTranscriptionMock.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useRunBatch("session-1"));
+
+    await act(async () => {
+      await result.current("/tmp/session.wav");
+    });
+
+    expect(startTranscriptionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "soniqo",
+        model: "soniqo-parakeet-batch",
+        languages: ["de", "en"],
+      }),
+      expect.any(Object),
+    );
+  });
+
+  test("uses an explicit local batch target for speaker refinement", async () => {
+    startTranscriptionMock.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useRunBatch("session-1"));
+
+    await act(async () => {
+      await result.current("/tmp/session.wav", {
+        provider: "soniqo",
+        model: "soniqo-parakeet-batch",
+        baseUrl: "soniqo://local",
+        apiKey: "",
+        notifyOnCompletion: false,
+      });
+    });
+
+    expect(startTranscriptionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "soniqo",
+        model: "soniqo-parakeet-batch",
+        base_url: "soniqo://local",
+        api_key: "",
+      }),
+      expect.objectContaining({ notifyOnCompletion: false }),
+    );
+    expect(toastWarningMock).not.toHaveBeenCalled();
+    expect(notifyBatchCompletedMock).not.toHaveBeenCalled();
+  });
+
+  test("uses custom Deepgram-compatible endpoints for batch transcription", async () => {
+    useSTTConnectionMock.mockReturnValue({
+      conn: {
+        provider: "custom",
+        model: "realtime-only",
+        baseUrl: "https://custom.test",
+        apiKey: "custom-key",
+      },
+    });
+    startTranscriptionMock.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useRunBatch("session-1"));
+
+    await act(async () => {
+      await result.current("/tmp/session.wav");
+    });
+
+    expect(startTranscriptionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "deepgram",
+        model: "realtime-only",
+        base_url: "https://custom.test",
+        api_key: "custom-key",
+      }),
+      expect.any(Object),
+    );
+    expect(toastWarningMock).not.toHaveBeenCalled();
+  });
+
+  test.each(["windows", "linux"] as const)(
+    "reports a language mismatch instead of a platform gap when Mistral is configured on %s",
+    async (currentPlatform) => {
+      platformMock.mockReturnValue(currentPlatform);
+      isSupportedLanguagesBatchMock.mockResolvedValue(false);
+      useSTTConnectionMock.mockReturnValue({
+        conn: {
+          provider: "mistral",
+          model: "voxtral-mini-2602",
+          baseUrl: "https://api.mistral.ai/v1",
+          apiKey: "mistral-key",
+        },
+      });
+
+      const { result } = renderHook(() => useRunBatch("session-1"));
+
+      await expect(
+        act(async () => {
+          await result.current("/tmp/session.wav");
+        }),
+      ).rejects.toThrow(
+        "voxtral-mini-2602 is not available for batch transcription with the selected languages",
+      );
+
+      expect(startTranscriptionMock).not.toHaveBeenCalled();
+      expect(toastWarningMock).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(["windows", "linux"] as const)(
+    "uses custom Deepgram-compatible batch endpoints on %s",
+    async (currentPlatform) => {
+      platformMock.mockReturnValue(currentPlatform);
+      useSTTConnectionMock.mockReturnValue({
+        conn: {
+          provider: "custom",
+          model: "realtime-only",
+          baseUrl: "https://custom.test",
+          apiKey: "custom-key",
+        },
+      });
+
+      const { result } = renderHook(() => useRunBatch("session-1"));
+
+      await act(async () => {
+        await result.current("/tmp/session.wav");
+      });
+
+      expect(startTranscriptionMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "deepgram",
+          model: "realtime-only",
+          base_url: "https://custom.test",
+          api_key: "custom-key",
+        }),
+        expect.any(Object),
+      );
+      expect(toastWarningMock).not.toHaveBeenCalled();
+    },
+  );
+
+  test("does not invoke Soniqo as a selected target or fallback on Intel macOS", async () => {
+    archMock.mockReturnValue("x86_64");
+    useSTTConnectionMock.mockReturnValue({
+      conn: {
+        provider: "anarlog",
+        model: "soniqo-parakeet-batch",
+        baseUrl: "soniqo://local",
+        apiKey: "",
+      },
+    });
+
+    const { result } = renderHook(() => useRunBatch("session-1"));
+
+    await expect(
+      act(async () => {
+        await result.current("/tmp/session.wav");
+      }),
+    ).rejects.toThrow(
+      "soniqo-parakeet-batch is not available for batch transcription on this platform",
+    );
+
+    expect(startTranscriptionMock).not.toHaveBeenCalled();
+  });
+
+  test("falls back from local Soniqo to cloud for paid Intel Mac users", async () => {
+    archMock.mockReturnValue("x86_64");
+    useBillingAccessMock.mockReturnValue({ isPaid: true });
+    useSTTConnectionMock.mockReturnValue({
+      conn: {
+        provider: "anarlog",
+        model: "soniqo-parakeet-batch",
+        baseUrl: "soniqo://local",
+        apiKey: "",
+      },
+    });
+    startTranscriptionMock.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useRunBatch("session-1"));
+
+    await act(async () => {
+      await result.current("/tmp/session.wav");
+    });
+
+    expect(startTranscriptionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "anarlog",
+        model: "cloud",
+        base_url: "https://api.test/stt",
+        api_key: "paid-token",
+      }),
+      expect.any(Object),
+    );
+  });
+
+  test("falls back to hosted cloud transcription for paid users", async () => {
+    isSupportedLanguagesBatchMock.mockResolvedValue(false);
+    useBillingAccessMock.mockReturnValue({
+      isPaid: true,
+    });
+    startTranscriptionMock.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useRunBatch("session-1"));
+
+    await act(async () => {
+      await result.current("/tmp/session.wav");
+    });
+
+    expect(startTranscriptionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "anarlog",
+        model: "cloud",
+        base_url: "https://api.test/stt",
+        api_key: "paid-token",
+      }),
+      expect.any(Object),
+    );
+    expect(toastWarningMock).toHaveBeenCalledWith(
+      "Using a batch transcription provider",
+      expect.objectContaining({
+        description:
+          "nova-3 is not available for batch transcription. Using Pro cloud transcription instead.",
+      }),
+    );
+  });
+
+  test("uses a request-ready cloud token before transcription starts", async () => {
+    useSTTConnectionMock.mockReturnValue({
+      conn: {
+        provider: "anarlog",
+        model: "cloud",
+        baseUrl: "https://api.test/stt",
+        apiKey: "stale-token",
+      },
+    });
+    useBillingAccessMock.mockReturnValue({ isPaid: true });
+    getSessionForRequestMock.mockResolvedValue({
+      access_token: "request-ready-token",
+    });
+    startTranscriptionMock.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useRunBatch("session-1"));
+
+    await act(async () => {
+      await result.current("/tmp/session.wav");
+    });
+
+    expect(startTranscriptionMock).toHaveBeenCalledTimes(1);
+    expect(startTranscriptionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ api_key: "request-ready-token" }),
+      expect.any(Object),
+    );
+  });
+
+  test("falls back to the current cloud token when refresh is unavailable", async () => {
+    useSTTConnectionMock.mockReturnValue({
+      conn: {
+        provider: "anarlog",
+        model: "cloud",
+        baseUrl: "https://api.test/stt",
+        apiKey: "stale-token",
+      },
+    });
+    useBillingAccessMock.mockReturnValue({ isPaid: true });
+    getSessionForRequestMock.mockRejectedValue(new Error("offline"));
+    startTranscriptionMock.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useRunBatch("session-1"));
+
+    await act(async () => {
+      await result.current("/tmp/session.wav");
+    });
+
+    expect(startTranscriptionMock).toHaveBeenCalledTimes(1);
+    expect(startTranscriptionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ api_key: "paid-token" }),
+      expect.any(Object),
+    );
+  });
+
+  test("refreshes an expired cloud token and retries transcription once", async () => {
+    useSTTConnectionMock.mockReturnValue({
+      conn: {
+        provider: "anarlog",
+        model: "cloud",
+        baseUrl: "https://api.test/stt",
+        apiKey: "stale-token",
+      },
+    });
+    useAuthMock.mockReturnValue({
+      session: {
+        access_token: "stale-token",
+        user: { id: "user-1" },
+      },
+      getSessionForRequest: getSessionForRequestMock,
+      refreshSession: refreshSessionMock,
+    });
+    getSessionForRequestMock.mockResolvedValue({
+      access_token: "stale-token",
+    });
+    refreshSessionMock.mockResolvedValue({ access_token: "fresh-token" });
+    startTranscriptionMock
+      .mockImplementationOnce(async (_params, options) => {
+        options.handlePersist(
+          [{ text: "stale", start_ms: 0, end_ms: 100, channel: 0 }],
+          [],
+        );
+        throw new Error(
+          "Authentication failed. Please check your API key in settings.",
+        );
+      })
+      .mockImplementationOnce(async (_params, options) => {
+        options.handlePersist(
+          [{ text: "fresh", start_ms: 0, end_ms: 100, channel: 0 }],
+          [],
+        );
+      });
+
+    const { result } = renderHook(() => useRunBatch("session-1"));
+
+    await act(async () => {
+      await result.current("/tmp/session.wav");
+    });
+
+    expect(refreshSessionMock).toHaveBeenCalledTimes(1);
+    expect(startTranscriptionMock).toHaveBeenCalledTimes(2);
+    expect(startTranscriptionMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ api_key: "fresh-token" }),
+      expect.any(Object),
+    );
+    expect(createTranscriptMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        words: [expect.objectContaining({ text: "fresh" })],
+      }),
+    );
+  });
+});
+
+describe("getSessionSpeakerCount", () => {
+  test("counts distinct session participants plus the current user", () => {
+    expect(
+      getSessionSpeakerCount(["human-a", "human-a", "human-b"], "self"),
+    ).toBe(3);
+  });
+
+  test("returns undefined until at least two speakers are known", () => {
+    expect(getSessionSpeakerCount(["human-a"], null)).toBe(undefined);
+  });
+});
