@@ -7,7 +7,7 @@ mod segments;
 mod speaker_context;
 pub use speaker_context::{
     ProvisionalSpeakerLabel, SpeakerContext, SpeakerContextInterval, SpeakerResolutionReason,
-    segment_options_for_assignments,
+    TeamsCaptionObservation, segment_options_for_assignments,
 };
 mod types;
 mod words;

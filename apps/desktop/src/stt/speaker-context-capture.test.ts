@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("~/stt/teams-caption-capture", () => ({
+  startTeamsCaptionCapture: () => ({ stop: async () => {} }),
+}));
 
 const mocks = vi.hoisted(() => ({
   context: { intervals: [] } as { intervals: Array<Record<string, unknown>> },

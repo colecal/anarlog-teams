@@ -44,6 +44,7 @@ vi.mock("~/settings/queries", () => ({
 }));
 
 vi.mock("./account", () => ({ SettingsAccount: () => null }));
+vi.mock("./teams-captions", () => ({ TeamsCaptionSettings: () => null }));
 vi.mock("./app-settings", () => ({ AppSettingsView: () => null }));
 vi.mock("./audio-settings", () => ({
   AudioSettingsView: () => <span>Audio settings</span>,

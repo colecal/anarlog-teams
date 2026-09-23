@@ -6,6 +6,7 @@ use crate::{
 
 fn context() -> SpeakerContext {
     SpeakerContext {
+        teams_captions: None,
         intervals: vec![SpeakerContextInterval {
             start_ms: 1000,
             end_ms: 10000,

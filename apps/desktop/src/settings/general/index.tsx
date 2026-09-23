@@ -21,6 +21,7 @@ import { Permissions } from "./permissions";
 import { SpokenLanguagesView } from "./spoken-languages";
 import { StorageSettingsView } from "./storage";
 import { SummaryLengthSelector } from "./summary-length";
+import { TeamsCaptionSettings } from "./teams-captions";
 import { TimezoneSelector } from "./timezone";
 import { WeekStartSelector } from "./week-start";
 
@@ -325,6 +326,8 @@ function SettingsSectionContent({
               />
             )}
           </form.Subscribe>
+
+          <TeamsCaptionSettings />
 
           <div>
             <h2 className="mb-4 font-sans text-lg font-semibold">

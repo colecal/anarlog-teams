@@ -3,6 +3,8 @@ import type {
   SpeakerContextInterval,
 } from "@anlg/plugin-transcription";
 
+import { parseCaptionObservations } from "~/stt/teams-captions";
+
 export const EMPTY_SPEAKER_CONTEXT: SpeakerContext = { intervals: [] };
 
 export function parseSpeakerContext(
@@ -13,6 +15,9 @@ export function parseSpeakerContext(
     if (!parsed || !Array.isArray(parsed.intervals))
       return EMPTY_SPEAKER_CONTEXT;
     return {
+      ...(Array.isArray(parsed.teams_captions)
+        ? { teams_captions: parseCaptionObservations(parsed.teams_captions) }
+        : {}),
       intervals: parsed.intervals.filter(
         (item: SpeakerContextInterval) =>
           item &&
@@ -59,12 +64,13 @@ export function appendSpeakerObservation(
       JSON.stringify(facts(last)) === JSON.stringify(facts(observation))
     ) {
       last.end_ms = observation.end_ms;
-      return { intervals };
+      return { ...context, intervals };
     }
     last.end_ms = Math.min(last.end_ms, observation.start_ms);
   }
   intervals.push(observation);
   return {
+    ...context,
     intervals: intervals.filter(
       (interval) => interval.end_ms > interval.start_ms,
     ),
@@ -76,6 +82,7 @@ export function closeSpeakerContext(
   at: number,
 ): SpeakerContext {
   return {
+    ...context,
     intervals: context.intervals
       .map((interval) => ({
         ...interval,

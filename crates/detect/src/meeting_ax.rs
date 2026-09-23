@@ -36,7 +36,9 @@ mod linux;
 mod node;
 #[cfg(any(test, target_os = "macos", target_os = "linux", target_os = "windows"))]
 mod platform;
+mod teams_captions;
 mod types;
+pub use teams_captions::{TeamsCaption, TeamsCaptionSnapshot, capture_teams_captions};
 #[cfg(target_os = "windows")]
 mod windows;
 

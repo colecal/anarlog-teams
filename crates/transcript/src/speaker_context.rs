@@ -1,10 +1,14 @@
 use std::collections::HashSet;
 
 use crate::{ChannelProfile, RenderTranscriptHuman, RenderedTranscriptSegment};
+mod teams;
+pub use teams::TeamsCaptionObservation;
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct SpeakerContext {
     pub intervals: Vec<SpeakerContextInterval>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub teams_captions: Option<Vec<TeamsCaptionObservation>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
@@ -27,6 +31,7 @@ pub enum SpeakerResolutionReason {
     VirtualMeetingMicrophone,
     SoleRemoteParticipant,
     OneOnOneTitle,
+    TeamsCaption,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
@@ -93,8 +98,13 @@ impl SpeakerContext {
             }
         }
 
+        let caption_labels = teams::labels(
+            self.teams_captions.as_deref().unwrap_or_default(),
+            &segments,
+            started_at,
+        );
         let mut result = Vec::new();
-        for segment in segments {
+        for (segment_index, segment) in segments.into_iter().enumerate() {
             // Context boundaries only affect inferred names, not explicit assignments.
             if segment.key.speaker_human_id.is_some() {
                 result.push(RenderedTranscriptSegment {
@@ -104,22 +114,28 @@ impl SpeakerContext {
                 continue;
             }
 
-            let mut groups: Vec<(Option<usize>, Vec<crate::SegmentWord>)> = Vec::new();
-            for word in &segment.words {
+            let mut groups: Vec<(Option<usize>, Option<String>, Vec<crate::SegmentWord>)> =
+                Vec::new();
+            for (word_index, word) in segment.words.iter().enumerate() {
+                let caption = caption_labels
+                    .get(&(segment_index, word_index))
+                    .cloned()
+                    .flatten();
                 let interval = self.interval_at(
                     started_at.saturating_add(word.start_ms),
                     started_at.saturating_add(word.end_ms),
                 );
-                if let Some((last_interval, words)) = groups.last_mut()
+                if let Some((last_interval, last_caption, words)) = groups.last_mut()
                     && *last_interval == interval
+                    && *last_caption == caption
                 {
                     words.push(word.clone());
                 } else {
-                    groups.push((interval, vec![word.clone()]));
+                    groups.push((interval, caption, vec![word.clone()]));
                 }
             }
             let split = groups.len() > 1;
-            for (interval, words) in groups {
+            for (interval, caption, words) in groups {
                 let mut part = RenderedTranscriptSegment {
                     id: segment.id.clone(),
                     key: segment.key.clone(),
@@ -141,7 +157,15 @@ impl SpeakerContext {
                     .to_owned();
                 part.words = words;
                 part.provisional_speaker = None;
-                if part.key.speaker_human_id.is_none()
+                if let Some(name) = caption {
+                    part.provisional_speaker = Some(ProvisionalSpeakerLabel {
+                        name,
+                        human_id: None,
+                        reason: SpeakerResolutionReason::TeamsCaption,
+                    });
+                } else if (self.teams_captions.is_none()
+                    || part.key.channel == ChannelProfile::DirectMic)
+                    && part.key.speaker_human_id.is_none()
                     && let Some(index) = interval
                 {
                     part.provisional_speaker = resolve_speaker(

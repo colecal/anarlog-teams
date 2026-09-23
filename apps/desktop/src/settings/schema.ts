@@ -1,4 +1,9 @@
 export const SETTING_DEFINITIONS = {
+  teams_caption_names: {
+    type: "boolean",
+    path: ["general", "teams_caption_names"],
+    default: false as boolean,
+  },
   dictation_live_preview: {
     type: "boolean",
     path: ["dictation", "live_preview"],
@@ -32,7 +37,7 @@ export const SETTING_DEFINITIONS = {
   automatic_updates: {
     type: "boolean",
     path: ["general", "automatic_updates"],
-    default: true as boolean,
+    default: false as boolean,
   },
   auto_stop_meetings: {
     type: "boolean",
@@ -213,12 +218,12 @@ export const SETTING_DEFINITIONS = {
   telemetry_consent: {
     type: "boolean",
     path: ["general", "telemetry_consent"],
-    default: true as boolean,
+    default: false as boolean,
   },
   crash_reporting_consent: {
     type: "boolean",
     path: ["general", "crash_reporting_consent"],
-    default: true as boolean,
+    default: false as boolean,
   },
   lock_app: {
     type: "boolean",
@@ -238,7 +243,7 @@ export const SETTING_DEFINITIONS = {
   cloud_sync_enabled: {
     type: "boolean",
     path: ["general", "cloud_sync_enabled"],
-    default: true as boolean,
+    default: false as boolean,
   },
   ai_language: {
     type: "string",

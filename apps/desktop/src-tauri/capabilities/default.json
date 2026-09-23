@@ -75,6 +75,7 @@
     "mcp:default",
     "messenger:default",
     "detect:default",
+    "detect:allow-capture-teams-captions",
     "dock:default",
     "permissions:default",
     "screen:default",

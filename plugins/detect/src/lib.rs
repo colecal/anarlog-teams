@@ -72,6 +72,7 @@ fn make_specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
             commands::inspect_meeting_accessibility::<tauri::Wry>,
             commands::send_meeting_chat_message::<tauri::Wry>,
             commands::capture_meeting_chat_messages::<tauri::Wry>,
+            commands::capture_teams_captions,
             commands::get_preferred_languages::<tauri::Wry>,
             commands::get_current_locale_identifier::<tauri::Wry>,
             commands::set_mic_active_threshold::<tauri::Wry>,

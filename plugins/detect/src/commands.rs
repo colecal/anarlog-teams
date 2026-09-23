@@ -1,5 +1,13 @@
 use crate::DetectPluginExt;
 
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn capture_teams_captions() -> Result<anlg_detect::TeamsCaptionSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(anlg_detect::capture_teams_captions)
+        .await
+        .map_err(|error| error.to_string())
+}
+
 #[derive(Debug, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct InstalledApplicationIcon {

@@ -61,6 +61,14 @@ export function useResolvedSpeakerSegments(
   const resolved = useMemo(() => {
     if (!input || !data) return undefined;
     if (isPlaceholderData) {
+      // Caption evidence is word-specific; never carry it to new words by voice index.
+      if (input.speaker_context?.teams_captions) {
+        return segments.map((segment) => ({
+          ...segment,
+          speaker_label: undefined,
+          provisional_speaker: undefined,
+        }));
+      }
       return carrySpeakerResolution(segments, data, input);
     }
     const metadata = new Map(

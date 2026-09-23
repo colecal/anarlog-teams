@@ -17,6 +17,7 @@ import {
   isPersonalMicrophone,
   parseSpeakerContext,
 } from "~/stt/speaker-context";
+import { startTeamsCaptionCapture } from "~/stt/teams-caption-capture";
 
 const captures = new Map<string, ReturnType<typeof createCapture>>();
 const POLL_MS = 5_000;
@@ -43,6 +44,7 @@ export function stopSpeakerContextCapture(sessionId: string) {
 }
 
 function createCapture(sessionId: string) {
+  const teamsCaptions = startTeamsCaptionCapture(sessionId);
   let stopped = false;
   let device: string | null = null;
   let isolated: boolean | null = null;
@@ -190,7 +192,9 @@ function createCapture(sessionId: string) {
       generation++;
       clearInterval(timer);
       const at = Date.now();
-      return persist(null, at).catch(report);
+      return Promise.all([teamsCaptions.stop(), persist(null, at)])
+        .then(() => {})
+        .catch(report);
     },
   };
 }
