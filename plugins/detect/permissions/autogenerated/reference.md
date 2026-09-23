@@ -10,6 +10,7 @@ Default permissions for the plugin
 - `allow-inspect-meeting-accessibility`
 - `allow-send-meeting-chat-message`
 - `allow-capture-meeting-chat-messages`
+- `allow-capture-teams-captions`
 - `allow-set-respect-do-not-disturb`
 - `allow-set-ignored-bundle-ids`
 - `allow-set-included-bundle-ids`
@@ -49,6 +50,32 @@ Enables the capture_meeting_chat_messages command without any pre-configured sco
 <td>
 
 Denies the capture_meeting_chat_messages command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`detect:allow-capture-teams-captions`
+
+</td>
+<td>
+
+Enables the capture_teams_captions command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`detect:deny-capture-teams-captions`
+
+</td>
+<td>
+
+Denies the capture_teams_captions command without any pre-configured scope.
 
 </td>
 </tr>

@@ -86,6 +86,14 @@ async captureMeetingChatMessages() : Promise<Result<MeetingChatCaptureResult, st
     else return { status: "error", error: e  as any };
 }
 },
+async captureTeamsCaptions() : Promise<Result<TeamsCaptionSnapshot, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("plugin:detect|capture_teams_captions") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getPreferredLanguages() : Promise<Result<string[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("plugin:detect|get_preferred_languages") };
@@ -138,6 +146,8 @@ export type MeetingChatDirection = "incoming" | "outgoing"
 export type MeetingChatSendResult = { sent: boolean; app: MeetingApp | null; platform: MeetingPlatform; surface: MeetingSurface; inputLabel: string | null; sendAction: string | null; warnings: string[] }
 export type MeetingPlatform = "zoom" | "googleMeet" | "microsoftTeams" | "slack" | "discord" | "webex" | "unknown"
 export type MeetingSurface = "native" | "web" | "unknown"
+export type TeamsCaption = { speaker: string; text: string }
+export type TeamsCaptionSnapshot = { contextId: string | null; captions: TeamsCaption[]; status: string }
 
 /** tauri-specta globals **/
 
