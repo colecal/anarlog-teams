@@ -949,6 +949,10 @@ msgstr ""
 msgid "Cancel transfer"
 msgstr ""
 
+#: src/settings/general/teams-captions.tsx
+msgid "Caption status"
+msgstr ""
+
 #: src/settings/stats/badge-collection.tsx
 msgid "Capture 10 conversations. More moments you can return to."
 msgstr ""
@@ -5551,6 +5555,10 @@ msgstr ""
 msgid "Teams"
 msgstr ""
 
+#: src/settings/general/teams-captions.tsx
+msgid "Teams caption speaker names (experimental)"
+msgstr ""
+
 #: src/settings/general/meeting-settings.tsx
 msgid "Tell participants when listening starts; this does not confirm consent."
 msgstr ""
@@ -6141,6 +6149,10 @@ msgstr ""
 
 #: src/settings/automations/workflow-builder.tsx
 msgid "When this happens"
+msgstr ""
+
+#: src/settings/general/teams-captions.tsx
+msgid "While recording, read visible native Teams captions to match names to transcript words. Requires Accessibility permission, live captions, participant consent, and employer approval. No voiceprints are created. Captured text follows the session's storage and sync settings."
 msgstr ""
 
 #: src/settings/ai/stt/local-file-model.tsx

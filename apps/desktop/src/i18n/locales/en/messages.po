@@ -949,6 +949,10 @@ msgstr "Cancel the invitation for {0}? They will no longer be able to join using
 msgid "Cancel transfer"
 msgstr "Cancel transfer"
 
+#: src/settings/general/teams-captions.tsx
+msgid "Caption status"
+msgstr "Caption status"
+
 #: src/settings/stats/badge-collection.tsx
 msgid "Capture 10 conversations. More moments you can return to."
 msgstr "Capture 10 conversations. More moments you can return to."
@@ -5551,6 +5555,10 @@ msgstr "teammate@company.com"
 msgid "Teams"
 msgstr "Teams"
 
+#: src/settings/general/teams-captions.tsx
+msgid "Teams caption speaker names (experimental)"
+msgstr "Teams caption speaker names (experimental)"
+
 #: src/settings/general/meeting-settings.tsx
 msgid "Tell participants when listening starts; this does not confirm consent."
 msgstr "Tell participants when listening starts; this does not confirm consent."
@@ -6142,6 +6150,10 @@ msgstr "What's new in {version}?"
 #: src/settings/automations/workflow-builder.tsx
 msgid "When this happens"
 msgstr "When this happens"
+
+#: src/settings/general/teams-captions.tsx
+msgid "While recording, read visible native Teams captions to match names to transcript words. Requires Accessibility permission, live captions, participant consent, and employer approval. No voiceprints are created. Captured text follows the session's storage and sync settings."
+msgstr "While recording, read visible native Teams captions to match names to transcript words. Requires Accessibility permission, live captions, participant consent, and employer approval. No voiceprints are created. Captured text follows the session's storage and sync settings."
 
 #: src/settings/ai/stt/local-file-model.tsx
 msgid "whisper.cpp models"
