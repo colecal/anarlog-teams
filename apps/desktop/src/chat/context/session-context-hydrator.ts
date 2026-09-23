@@ -36,6 +36,7 @@ async function buildTranscript(
   humans: Array<{ id: string; name: string }>,
   participantHumanIds: string[],
   selfHumanId?: string,
+  speakerContext?: SessionContentSnapshot["speakerContext"],
 ): Promise<Transcript | null> {
   if (transcripts.length === 0) {
     return null;
@@ -49,6 +50,7 @@ async function buildTranscript(
         .map((human) => ({ human_id: human.id, name: human.name })),
     },
     participantHumanIds,
+    speakerContext,
   );
   if (!request) {
     return null;
@@ -111,6 +113,7 @@ export async function hydrateSessionContext(
     humans,
     participantHumanIds,
     selfHumanId,
+    snapshot.speakerContext,
   );
   const eventName = extractEventName(snapshot.event);
   const meetingChat = formatMeetingChatRecordsAsMarkdown(

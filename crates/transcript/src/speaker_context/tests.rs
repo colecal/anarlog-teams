@@ -21,6 +21,93 @@ fn context() -> SpeakerContext {
     }
 }
 
+fn caption_request() -> RenderTranscriptRequest {
+    let mut ctx = context();
+    ctx.teams_captions = Some(vec![TeamsCaptionObservation {
+        observed_at_ms: 12_000,
+        speaker: "Alex Example".into(),
+        text: "We should review the example tomorrow".into(),
+    }]);
+    let mut req = request(ctx, &[(1, 0); 8]);
+    for (word, text) in req.transcripts[0].words.iter_mut().zip([
+        "Before ",
+        "We ",
+        "should ",
+        "review ",
+        "the ",
+        "example ",
+        "tomorrow ",
+        "After ",
+    ]) {
+        word.text = text.trim().into();
+    }
+    req
+}
+
+#[test]
+fn caption_names_only_matching_words_and_survives_persistence() {
+    let json = serde_json::to_string(&caption_request()).unwrap();
+    let segments = render_transcript_segments(serde_json::from_str(&json).unwrap());
+    assert_eq!(segments.len(), 3);
+    assert_eq!(segments[0].speaker_label, "Speaker 1");
+    assert_eq!(segments[1].speaker_label, "Alex Example");
+    assert_eq!(segments[1].text, "We should review the example tomorrow");
+    assert_eq!(
+        segments[1].provisional_speaker.as_ref().unwrap().reason,
+        SpeakerResolutionReason::TeamsCaption
+    );
+    assert_eq!(segments[2].speaker_label, "Speaker 1");
+    assert!(
+        segments
+            .iter()
+            .all(|segment| segment.key.speaker_human_id.is_none())
+    );
+}
+
+#[test]
+fn explicit_name_wins_over_conflicting_caption() {
+    let mut req = caption_request();
+    req.humans.push(RenderTranscriptHuman {
+        human_id: "corrected".into(),
+        name: "Sam Example".into(),
+    });
+    req.transcripts[0]
+        .assignments
+        .push(crate::IdentityAssignment {
+            human_id: "corrected".into(),
+            scope: crate::IdentityScope::Words {
+                word_ids: (0..8).map(|id| id.to_string()).collect(),
+            },
+        });
+    let segments = render_transcript_segments(req);
+    assert!(
+        segments
+            .iter()
+            .all(|segment| segment.speaker_label == "Sam Example"
+                && segment.provisional_speaker.is_none())
+    );
+}
+
+#[test]
+fn unavailable_captions_disable_remote_roster_and_title_guesses() {
+    let mut ctx = context();
+    ctx.teams_captions = Some(vec![]);
+    ctx.intervals[0].participants.push(RenderTranscriptHuman {
+        human_id: "remote".into(),
+        name: "Alex Example".into(),
+    });
+    let segments = render_transcript_segments(request(ctx, &[(0, 0), (1, 1)]));
+    assert_eq!(segments[0].speaker_label, "John");
+    assert_eq!(segments[1].speaker_label, "Speaker 1");
+}
+
+#[test]
+fn old_speaker_context_without_captions_keeps_its_behavior() {
+    let old: SpeakerContext = serde_json::from_str(r#"{"intervals":[]}"#).unwrap();
+    assert!(old.teams_captions.is_none());
+    assert_eq!(serde_json::to_string(&old).unwrap(), r#"{"intervals":[]}"#);
+}
+
 fn request(context: SpeakerContext, speakers: &[(i32, i32)]) -> RenderTranscriptRequest {
     RenderTranscriptRequest {
         speaker_context: Some(context),

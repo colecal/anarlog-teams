@@ -3,6 +3,24 @@ import { describe, expect, test } from "vitest";
 import { resolveConfigValue } from ".";
 
 describe("resolveConfigValue", () => {
+  test.each([
+    "teams_caption_names",
+    "cloud_sync_enabled",
+    "telemetry_consent",
+    "crash_reporting_consent",
+    "remember_speakers",
+    "auto_start_scheduled_meetings",
+  ] as const)("requires explicit opt-in for %s on a fresh install", (key) => {
+    expect(resolveConfigValue(key, { values: {}, hasValues: new Set() })).toBe(
+      false,
+    );
+    expect(
+      resolveConfigValue(key, {
+        values: { [key]: true },
+        hasValues: new Set([key]),
+      }),
+    ).toBe(true);
+  });
   test("uses legacy don't-save when audio retention is missing", () => {
     expect(
       resolveConfigValue("audio_retention", {
@@ -57,22 +75,22 @@ describe("resolveConfigValue", () => {
     ).toBe(false);
   });
 
-  test("keeps automatic updates on until explicitly disabled", () => {
+  test("keeps upstream automatic updates off in the private fork", () => {
     expect(
       resolveConfigValue("automatic_updates", {
         values: {},
         hasValues: new Set(),
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
-  test("keeps remember speakers on until explicitly disabled", () => {
+  test("keeps voice memory off until explicitly enabled", () => {
     expect(
       resolveConfigValue("remember_speakers", {
         values: {},
         hasValues: new Set(),
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   test("respects an explicit remember speakers opt-out", () => {

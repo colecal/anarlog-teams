@@ -5,6 +5,7 @@ import {
   parseSessionSourceApps,
   type SessionSourceApp,
 } from "~/session/source-apps";
+import { parseSpeakerContext } from "~/stt/speaker-context";
 import type { SpeakerHintWithId, WordWithId } from "~/stt/types";
 
 type SessionContentSqlRow = {
@@ -14,6 +15,7 @@ type SessionContentSqlRow = {
   title: string;
   created_at: string;
   event_json: string;
+  speaker_context_json: string | null;
   source_apps_json: string;
   event_id: string;
   raw_note_id: string;
@@ -51,6 +53,7 @@ type ParticipantJson = {
 };
 
 export type SessionContentSnapshot = {
+  speakerContext?: ReturnType<typeof parseSpeakerContext>;
   sessionId: string;
   ownerUserId: string;
   ownerEmail?: string | null;
@@ -104,6 +107,7 @@ const SESSION_CONTENT_SQL = `
     session.title,
     session.created_at,
     session.event_json,
+    json_extract(session.metadata_json, '$.speaker_context') AS speaker_context_json,
     session.source_apps_json,
     COALESCE(NULLIF(session.event_id, ''), NULLIF(session.external_event_id, ''), '') AS event_id,
     COALESCE(note.id, '') AS raw_note_id,
@@ -269,6 +273,7 @@ function mapSessionContentRow(
 
   return {
     sessionId: row.id,
+    speakerContext: parseSpeakerContext(row.speaker_context_json),
     ownerUserId: row.owner_user_id,
     ownerEmail: row.owner_email,
     title: row.title,

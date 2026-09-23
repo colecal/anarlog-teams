@@ -41,6 +41,31 @@ class LicenseBoundaryTests(unittest.TestCase):
     def test_accepts_one_way_enterprise_boundary(self) -> None:
         self.assertEqual(check_boundary(self.root), [])
 
+    def test_accepts_community_only_snapshot_but_rejects_enterprise_paths(self) -> None:
+        community = self.root / "community-only"
+        community.mkdir()
+        (community / "LICENSE.enterprise").write_text(NOTICE)
+        self.assertEqual(check_boundary(community), [])
+        (community / "Cargo.toml").write_text(
+            '[package]\nname = "community"\nversion = "0.1.0"\n'
+            '[dependencies]\nserver = { path = "enterprise/server" }\n'
+        )
+        self.assertTrue(
+            any(
+                "depends on enterprise path" in error
+                for error in check_boundary(community)
+            )
+        )
+
+    def test_requires_directory_notice_when_commercial_tree_exists(self) -> None:
+        (self.root / "enterprise" / "LICENSE").unlink()
+        self.assertTrue(
+            any(
+                "missing commercial license notice: enterprise/LICENSE" in error
+                for error in check_boundary(self.root)
+            )
+        )
+
     def test_rejects_rust_path_from_community_to_enterprise(self) -> None:
         (self.root / "crates" / "client" / "Cargo.toml").write_text(
             '[package]\nname = "community-client"\nversion = "0.1.0"\n'

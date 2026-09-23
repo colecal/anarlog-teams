@@ -189,6 +189,17 @@ describe("buildRenderTranscriptRequestFromRows", () => {
     expect(request?.participant_human_ids).toEqual(["remote"]);
   });
 
+  it("keeps caption mode even before a microphone interval is available", () => {
+    const speakerContext = { intervals: [], teams_captions: [] };
+    const request = buildRenderTranscriptRequestFromRows(
+      [transcripts.early] as unknown as TranscriptRow[],
+      undefined,
+      [],
+      speakerContext,
+    );
+    expect(request?.speaker_context).toEqual(speakerContext);
+  });
+
   it("applies provider speaker hints before user assignments regardless of storage order", () => {
     const request = createRequest(["unordered"]);
 

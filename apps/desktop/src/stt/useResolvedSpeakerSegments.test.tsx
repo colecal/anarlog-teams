@@ -33,6 +33,31 @@ describe("useResolvedSpeakerSegments", () => {
     vi.clearAllMocks();
   });
 
+  it("does not carry caption names to new words with the same voice index", async () => {
+    const request = createRequest();
+    request.speaker_context!.teams_captions = [];
+    const first = createSegment("remote", 1);
+    mocks.renderTranscriptSegments.mockResolvedValueOnce({
+      status: "ok",
+      data: [labelSegment(first, "Alex Example", null)],
+    });
+    const { rerender, result } = renderHook(
+      ({ segments }) => useResolvedSpeakerSegments(segments, request),
+      { initialProps: { segments: [first] }, wrapper },
+    );
+    await waitFor(() =>
+      expect(result.current[0]?.speaker_label).toBe("Alex Example"),
+    );
+    mocks.renderTranscriptSegments.mockImplementationOnce(
+      () => new Promise(() => {}),
+    );
+    const next = { ...createSegment("later", 1), key: first.key };
+    rerender({ segments: [first, next] });
+    expect(result.current[1]?.speaker_label).toBeUndefined();
+    expect(result.current[1]?.provisional_speaker).toBeUndefined();
+    expect(result.current[1]?.text).toBe(next.text);
+  });
+
   it("keeps the previous speaker resolution while a live update is re-resolved", async () => {
     const request = createRequest();
     const initial = [createSegment("self", 0), createSegment("remote", 1)];

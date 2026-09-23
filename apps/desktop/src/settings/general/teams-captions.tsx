@@ -31,7 +31,7 @@ export function TeamsCaptionSettings() {
         onChange={(value) => setValues({ teams_caption_names: value })}
       />
       <p role="status" className="text-muted-foreground text-sm">
-      <Trans>Caption status</Trans>: {status.replace(/_/g, " ")}
+        <Trans>Caption status</Trans>: {status.replace(/_/g, " ")}
       </p>
     </div>
   );

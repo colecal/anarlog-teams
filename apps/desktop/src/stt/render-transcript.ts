@@ -153,7 +153,10 @@ export function buildRenderTranscriptRequestFromRows(
     humans,
     participantHumanIds,
   );
-  return request && speakerContext?.intervals.length
+  return request &&
+    speakerContext &&
+    (speakerContext.intervals.length ||
+      speakerContext.teams_captions !== undefined)
     ? { ...request, speaker_context: speakerContext }
     : request;
 }

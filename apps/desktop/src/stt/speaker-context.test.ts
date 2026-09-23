@@ -20,6 +20,24 @@ const observation = {
 };
 
 describe("speaker capture evidence", () => {
+  it("preserves caption evidence across interval updates, stop, and serialization", () => {
+    const teams_captions = [
+      {
+        observed_at_ms: 7000,
+        speaker: "Alex Example",
+        text: "We should review the example tomorrow",
+      },
+    ];
+    const context = appendSpeakerObservation(
+      { intervals: [], teams_captions },
+      observation,
+    );
+    const restored = parseSpeakerContext(
+      JSON.stringify(closeSpeakerContext(context, 8000)),
+    );
+    expect(restored.teams_captions).toEqual(teams_captions);
+    expect(restored.intervals[0]?.end_ms).toBe(8000);
+  });
   it("coalesces repeated observations while retaining device boundaries", () => {
     let context = appendSpeakerObservation({ intervals: [] }, observation);
     context = appendSpeakerObservation(context, {

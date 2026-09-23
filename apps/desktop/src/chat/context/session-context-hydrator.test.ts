@@ -61,6 +61,7 @@ describe("session chat context hydration", () => {
     );
     mocks.loadSessionContentSnapshot.mockResolvedValue({
       sessionId: "session-1",
+      speakerContext: { intervals: [], teams_captions: [] },
       title: "Planning",
       createdAt: "2026-07-10T09:00:00.000Z",
       event: { title: "Weekly planning" },
@@ -140,6 +141,7 @@ describe("session chat context hydration", () => {
         ]),
       }),
       ["human-1"],
+      { intervals: [], teams_captions: [] },
     );
   });
 

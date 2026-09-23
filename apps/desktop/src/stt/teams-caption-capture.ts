@@ -14,6 +14,7 @@ export const useTeamsCaptionStatus = create<{ status: string }>(() => ({
 }));
 
 export function startTeamsCaptionCapture(sessionId: string) {
+  let atCapacity = false;
   const enabled = async () =>
     resolveConfigValue(
       "teams_caption_names",
@@ -27,7 +28,13 @@ export function startTeamsCaptionCapture(sessionId: string) {
         throw new Error("Caption capture unavailable");
       return result.data;
     },
-    status: (status) => useTeamsCaptionStatus.setState({ status }),
+    status: (status) =>
+      useTeamsCaptionStatus.setState({
+        status:
+          atCapacity && status === "capturing"
+            ? "capture_limit_reached"
+            : status,
+      }),
     persist: (observations, valid) =>
       enqueueDatabaseWrite(`session:${sessionId}`, async () => {
         if (!valid() || !(await enabled())) return;
@@ -39,6 +46,7 @@ export function startTeamsCaptionCapture(sessionId: string) {
         const context = parseSpeakerContext(rows[0].context);
         const previous = context.teams_captions ?? [];
         if (previous.length >= 10_000) {
+          atCapacity = true;
           useTeamsCaptionStatus.setState({ status: "capture_limit_reached" });
           return;
         }
@@ -47,6 +55,7 @@ export function startTeamsCaptionCapture(sessionId: string) {
           ...context,
           teams_captions: [...previous, ...observations].slice(0, 10_000),
         };
+        atCapacity = next.teams_captions.length >= 10_000;
         if (!valid()) return;
         await executeTransaction([
           {

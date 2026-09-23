@@ -79,6 +79,33 @@ pub fn capture_teams_captions() -> TeamsCaptionSnapshot {
 }
 
 #[cfg(any(test, target_os = "macos"))]
+pub(super) fn needs_caption_bounds(
+    identifier: Option<&str>,
+    title: Option<&str>,
+    description: Option<&str>,
+    value: Option<&str>,
+) -> bool {
+    matches!(
+        identifier,
+        Some(
+            "closed-captions-container"
+                | "closed-captions-renderer"
+                | "live-captions"
+                | "closed-caption-item"
+                | "caption-item"
+                | "closed-caption-speaker-name"
+                | "speaker-name"
+                | "author"
+                | "closed-caption-text"
+                | "caption-text"
+        )
+    ) || [title, description, value]
+        .into_iter()
+        .flatten()
+        .any(|label| label.trim().eq_ignore_ascii_case("live captions"))
+}
+
+#[cfg(any(test, target_os = "macos"))]
 fn parse_captions(nodes: &[super::AxNode]) -> Option<Vec<TeamsCaption>> {
     use super::{node_has_positive_bounds, node_labels, path_is_ancestor};
     let id_is = |node: &super::AxNode, values: &[&str]| {
@@ -127,6 +154,8 @@ fn parse_captions(nodes: &[super::AxNode]) -> Option<Vec<TeamsCaption>> {
                 .filter(|node| {
                     path_is_ancestor(&row.tree_path, &node.tree_path)
                         && node_has_positive_bounds(node)
+                        && !node.settable_value
+                        && !super::node::is_text_input_role(&node.role)
                         && id_is(node, ids)
                 })
                 .collect();
@@ -225,5 +254,28 @@ mod tests {
         let mut nodes = fixture();
         nodes[2].title = Some("Speaker 1".into());
         assert!(parse_captions(&nodes).unwrap().is_empty());
+    }
+
+    #[test]
+    fn snapshot_collects_bounds_for_every_caption_field() {
+        for node in fixture() {
+            assert!(needs_caption_bounds(
+                node.identifier.as_deref(),
+                node.title.as_deref(),
+                node.description.as_deref(),
+                node.value.as_deref(),
+            ));
+        }
+        assert!(!needs_caption_bounds(Some("unrelated"), None, None, None));
+    }
+
+    #[test]
+    fn hidden_or_editable_fields_are_not_caption_evidence() {
+        let mut nodes = fixture();
+        nodes[2].bounds = None;
+        assert!(parse_captions(&nodes).is_none());
+        let mut nodes = fixture();
+        nodes[3].role = Some("AXTextField".into());
+        assert!(parse_captions(&nodes).is_none());
     }
 }

@@ -94,7 +94,9 @@ def check_boundary(root: Path) -> list[str]:
 
     root_notice = root / "LICENSE.enterprise"
     directory_notice = enterprise / "LICENSE"
-    for notice in (root_notice, directory_notice):
+    # Community-only snapshots omit the commercial source tree entirely.
+    notices = (root_notice, directory_notice) if enterprise.exists() else (root_notice,)
+    for notice in notices:
         if not notice.is_file():
             errors.append(
                 f"missing commercial license notice: {notice.relative_to(root)}"

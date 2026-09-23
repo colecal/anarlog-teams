@@ -2082,13 +2082,19 @@ fn snapshot_node(element: &ax::UiElement, index: usize) -> AxNode {
         string_attr(element, ax::attr::desc()).or_else(|| string_attr(element, ax::attr::help()));
     let placeholder = string_attr(element, ax::attr::placeholder_value());
     let enabled = ax_bool_attr(element, ax::attr::enabled());
-    let bounds = node_needs_bounds(&role, settable_value, title.as_deref())
-        .then(|| {
-            ax_frame(element)
-                .or_else(|| rect_from_position_and_size(element))
-                .map(AxRect::from)
-        })
-        .flatten();
+    let bounds = (node_needs_bounds(&role, settable_value, title.as_deref())
+        || teams_captions::needs_caption_bounds(
+            identifier.as_deref(),
+            title.as_deref(),
+            description.as_deref(),
+            value.as_deref(),
+        ))
+    .then(|| {
+        ax_frame(element)
+            .or_else(|| rect_from_position_and_size(element))
+            .map(AxRect::from)
+    })
+    .flatten();
     let text = searchable_node_text(
         &role,
         &title,

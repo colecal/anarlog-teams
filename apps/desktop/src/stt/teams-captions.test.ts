@@ -55,15 +55,16 @@ describe("Teams caption recording lifecycle", () => {
     });
     await f.poller.poll();
     expect(f.persist.mock.calls[0]?.[0]).toEqual([]);
+    f.persist.mockClear();
     await f.poller.poll();
-    expect(f.persist.mock.calls[1]?.[0]).toEqual([]);
+    expect(f.persist.mock.calls[0]?.[0]).toEqual([]);
     f.snapshot.mockResolvedValue({
       contextId: "meeting-one",
       captions: [{ ...caption, text: caption.text + " morning" }],
       status: "capturing",
     });
     await f.poller.poll();
-    expect(f.persist.mock.calls[2]?.[0]).toEqual([
+    expect(f.persist.mock.calls[1]?.[0]).toEqual([
       { ...caption, text: caption.text + " morning", observed_at_ms: 12345 },
     ]);
   });
@@ -82,7 +83,7 @@ describe("Teams caption recording lifecycle", () => {
       "meeting_changed_restart_recording",
     );
   });
-  it("drops results after stop and waits for in-flight work", async () => {
+  it("does not wait for a hung native read and drops its late results", async () => {
     const f = setup();
     let resolve!: (value: CaptionSnapshot) => void;
     f.snapshot.mockImplementation(
@@ -92,8 +93,11 @@ describe("Teams caption recording lifecycle", () => {
         }),
     );
     const polling = f.poller.poll();
-    await Promise.resolve();
+    await vi.waitFor(() => expect(f.snapshot).toHaveBeenCalledTimes(1));
+    f.persist.mockClear();
     const stopping = f.poller.stop();
+    await stopping;
+    expect(f.status).toHaveBeenLastCalledWith("not_recording");
     resolve({
       contextId: "meeting-one",
       captions: [caption],
@@ -104,8 +108,30 @@ describe("Teams caption recording lifecycle", () => {
     await f.poller.poll();
     expect(f.snapshot).toHaveBeenCalledTimes(1);
   });
+
+  it("drains a database write already in progress before stop finishes", async () => {
+    const f = setup();
+    let finish!: () => void;
+    f.persist.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const polling = f.poller.poll();
+    await vi.waitFor(() => expect(f.persist).toHaveBeenCalledTimes(1));
+    const stopping = f.poller.stop();
+    expect(f.status).not.toHaveBeenCalledWith("not_recording");
+    expect(f.persist.mock.calls[0]?.[1]()).toBe(false);
+    finish();
+    await Promise.all([polling, stopping]);
+    expect(f.snapshot).not.toHaveBeenCalled();
+    expect(f.status).toHaveBeenLastCalledWith("not_recording");
+  });
   it("drops results if permission is disabled mid-poll", async () => {
     const f = setup();
+    await f.poller.poll();
+    f.persist.mockClear();
     f.enabled.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
     await f.poller.poll();
     expect(f.persist).not.toHaveBeenCalled();
@@ -116,6 +142,19 @@ describe("Teams caption recording lifecycle", () => {
     await Promise.all([f.poller.poll(), f.poller.poll()]);
     expect(f.snapshot).toHaveBeenCalledTimes(1);
     expect(f.status).toHaveBeenLastCalledWith("capture_error");
+  });
+  it("marks caption mode even when Teams exposes no supported caption layout", async () => {
+    const f = setup();
+    f.snapshot.mockResolvedValue({
+      contextId: null,
+      captions: [],
+      status: "captions_off_or_unsupported_layout",
+    });
+    await f.poller.poll();
+    expect(f.persist).toHaveBeenCalledWith([], expect.any(Function));
+    expect(f.status).toHaveBeenLastCalledWith(
+      "captions_off_or_unsupported_layout",
+    );
   });
   it("validates stored evidence", () => {
     expect(
