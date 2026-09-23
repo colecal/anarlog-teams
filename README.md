@@ -1,4 +1,32 @@
-> **Note:** The team is now building **[char](https://char.com)**. The **anarlog** community application remains open-source, MIT-licensed, and maintained as the local-first meeting notetaker in this repo. Source-visible enterprise components are commercially licensed.
+# Anarlog Teams — private experimental fork
+
+This is `colecal/anarlog-teams`, a private community-code derivative of
+[`fastrepl/anarlog`](https://github.com/fastrepl/anarlog) at
+`39613e537ba4c2ddbd2eb5fb4f33c6bf9e79d11e`. It adds an opt-in native macOS Teams
+caption reader and conservative phrase/timing matching for speaker names. It
+does not require manually mapping each transcript turn to a person.
+
+**Prototype, not a validated Teams integration or an approved work recorder.**
+The actual Teams macOS accessibility layout still needs a consented test on the
+target Mac. Unsupported layouts and ambiguous phrases remain unnamed. A private
+repo or local model does not establish RealPage approval.
+
+Start with [private-fork setup, privacy boundaries, and acceptance test](PRIVATE_TEAMS.md).
+Do not use the upstream Download links below to install this fork: they install
+upstream Anarlog, without these changes. There is no signed installer for this fork yet.
+
+New installations default cloud sync, telemetry, crash reports, automatic
+updates, cross-meeting voice memory, and scheduled auto-recording to **off**.
+Existing explicit preferences are preserved. Hosted providers remain in the
+code; you must select local transcription and local intelligence for local AI.
+
+The commercial `enterprise/` directory and upstream deployment workflows were
+not imported. Original license notices are retained. The upstream README below
+describes the original project, not this fork's validation or support status.
+
+---
+
+> **Upstream note:** The team is now building **[char](https://char.com)**. The **anarlog** community application remains open-source and MIT-licensed.
 
 <div align="center">
 

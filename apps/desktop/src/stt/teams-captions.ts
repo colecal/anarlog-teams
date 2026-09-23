@@ -22,7 +22,7 @@ export function parseCaptionObservations(value: unknown): CaptionObservation[] {
         typeof item.speaker === "string" &&
         item.speaker.trim().length > 0 &&
         item.speaker.length <= 120 &&
-        !/[\u0000-\u001f\u007f]/u.test(item.speaker) &&
+        !/\p{Cc}/u.test(item.speaker) &&
         typeof item.text === "string" &&
         item.text.length > 0 &&
         item.text.length <= 2_000,
@@ -41,15 +41,31 @@ export function createTeamsCaptionPoller(deps: {
 }) {
   let stopped = false;
   let pending: Promise<void> | null = null;
+  let writing: Promise<void> | null = null;
   let context: string | null = null;
   let previous: Set<string> | null = null;
   let rejectedContext = false;
+  let initialized = false;
   const now = deps.now ?? Date.now;
+  const persist = async (observations: CaptionObservation[]) => {
+    writing = deps.persist(observations, () => !stopped);
+    try {
+      await writing;
+    } finally {
+      writing = null;
+    }
+  };
   const run = async () => {
     if (!(await deps.enabled()) || stopped) {
       previous = null;
       if (!stopped) deps.status("disabled");
       return;
+    }
+    // Even unavailable captions must disable roster/title-based remote name guesses.
+    if (!initialized) {
+      await persist([]);
+      if (stopped || !(await deps.enabled())) return;
+      initialized = true;
     }
     const snapshot = await deps.snapshot();
     const observedAt = now();
@@ -87,7 +103,7 @@ export function createTeamsCaptionPoller(deps: {
         observed_at_ms: observedAt,
       })),
     );
-    await deps.persist(observations, () => !stopped);
+    await persist(observations);
     if (!stopped) {
       previous = current;
       deps.status(snapshot.status);
@@ -99,6 +115,7 @@ export function createTeamsCaptionPoller(deps: {
       if (pending) return pending;
       pending = run()
         .catch(() => {
+          previous = null;
           if (!stopped) deps.status("capture_error");
         })
         .finally(() => {
@@ -108,7 +125,9 @@ export function createTeamsCaptionPoller(deps: {
     },
     async stop() {
       stopped = true;
-      await pending;
+      // A slow native AX read must not block stopping audio. Drain only writes;
+      // the stopped guard discards any read that completes later.
+      await writing;
       deps.status("not_recording");
     },
   };

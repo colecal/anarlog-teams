@@ -126,13 +126,13 @@ describe("SettingsApp", () => {
         onChange: (value: boolean) => void;
       };
     };
-    expect(props.autoStartScheduledMeetings.value).toBe(true);
+    expect(props.autoStartScheduledMeetings.value).toBe(false);
 
-    act(() => props.autoStartScheduledMeetings.onChange(false));
+    act(() => props.autoStartScheduledMeetings.onChange(true));
 
     await waitFor(() => {
       expect(mocks.setSettingValues).toHaveBeenCalledWith(
-        expect.objectContaining({ auto_start_scheduled_meetings: false }),
+        expect.objectContaining({ auto_start_scheduled_meetings: true }),
       );
     });
   });

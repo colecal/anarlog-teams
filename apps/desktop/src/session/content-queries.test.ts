@@ -20,6 +20,16 @@ describe("session content SQLite snapshots", () => {
     mocks.execute.mockResolvedValueOnce([
       {
         id: "session-1",
+        speaker_context_json: JSON.stringify({
+          intervals: [],
+          teams_captions: [
+            {
+              observed_at_ms: 1000,
+              speaker: "Alex Example",
+              text: "We should review the example tomorrow",
+            },
+          ],
+        }),
         owner_user_id: "user-1",
         owner_email: "user@example.com",
         title: "Planning",
@@ -89,6 +99,16 @@ describe("session content SQLite snapshots", () => {
 
     expect(snapshot).toMatchObject({
       sessionId: "session-1",
+      speakerContext: {
+        intervals: [],
+        teams_captions: [
+          {
+            observed_at_ms: 1000,
+            speaker: "Alex Example",
+            text: "We should review the example tomorrow",
+          },
+        ],
+      },
       ownerUserId: "user-1",
       ownerEmail: "user@example.com",
       title: "Planning",

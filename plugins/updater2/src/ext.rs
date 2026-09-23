@@ -28,7 +28,7 @@ impl<'a, R: tauri::Runtime, M: tauri::Manager<R>> Updater2<'a, R, M> {
         let store = self.manager.store2().scoped_store(crate::PLUGIN_NAME)?;
         let enabled = store
             .get(crate::StoreKey::AutomaticUpdatesEnabled)?
-            .unwrap_or(true);
+            .unwrap_or(false);
         Ok(enabled)
     }
 

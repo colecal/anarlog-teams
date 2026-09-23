@@ -296,8 +296,8 @@ describe("CloudSync auth lifecycle", () => {
     vi.mocked(suspendCloudsyncAfterAuthLoss).mockResolvedValue(undefined);
     vi.mocked(suspendCloudsyncForSignOut).mockResolvedValue(undefined);
     vi.mocked(getStoredSettingValues).mockResolvedValue({
-      values: {},
-      hasValues: new Set(),
+      values: { cloud_sync_enabled: true },
+      hasValues: new Set(["cloud_sync_enabled"]),
     });
   });
 
@@ -332,6 +332,20 @@ describe("CloudSync auth lifecycle", () => {
     expect(configureCloudsyncToken).not.toHaveBeenCalled();
     expect(suspendCloudsync).toHaveBeenCalledTimes(1);
     expect(getCloudsyncCredentialBlock()).toBeNull();
+  });
+
+  test("does not enroll a fresh private-fork installation in cloud sync", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(getStoredSettingValues).mockResolvedValue({
+      values: {},
+      hasValues: new Set(),
+    });
+    await applyCloudsyncPreference(session());
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(configureCloudsyncToken).not.toHaveBeenCalled();
+    expect(suspendCloudsync).toHaveBeenCalledTimes(1);
   });
 
   test("keeps first-device recovery setup separate from enrollment", async () => {
@@ -1954,7 +1968,10 @@ describe("CloudSync auth lifecycle", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(configureCloudsyncToken).not.toHaveBeenCalled();
 
-    settings.resolve({ values: {}, hasValues: new Set() });
+    settings.resolve({
+      values: { cloud_sync_enabled: true },
+      hasValues: new Set(["cloud_sync_enabled"]),
+    });
     await settings.promise;
     await vi.advanceTimersByTimeAsync(0);
 

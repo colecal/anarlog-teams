@@ -47,7 +47,7 @@ export const SETTING_DEFINITIONS = {
   auto_start_scheduled_meetings: {
     type: "boolean",
     path: ["general", "auto_start_scheduled_meetings"],
-    default: true as boolean,
+    default: false as boolean,
   },
   auto_join_scheduled_meetings: {
     type: "boolean",
@@ -142,7 +142,7 @@ export const SETTING_DEFINITIONS = {
   remember_speakers: {
     type: "boolean",
     path: ["general", "remember_speakers"],
-    default: true as boolean,
+    default: false as boolean,
   },
   microphone_device: {
     type: "string",

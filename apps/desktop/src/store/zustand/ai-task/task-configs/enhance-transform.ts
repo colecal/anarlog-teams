@@ -316,6 +316,7 @@ async function getTranscriptSegments(
         .map((human) => ({ human_id: human.id, name: human.name })),
     },
     snapshot.participants.map((participant) => participant.humanId),
+    snapshot.speakerContext,
   );
   if (!request) {
     return [];

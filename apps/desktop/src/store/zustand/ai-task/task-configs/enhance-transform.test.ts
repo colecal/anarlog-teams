@@ -46,6 +46,16 @@ vi.mock("~/stt/render-transcript", () => ({
 function createSnapshot() {
   return {
     sessionId: "session-1",
+    speakerContext: {
+      intervals: [],
+      teams_captions: [
+        {
+          observed_at_ms: 1000,
+          speaker: "Alex Example",
+          text: "We should review the example tomorrow",
+        },
+      ],
+    },
     ownerUserId: "user-1",
     title: "Weekly Review",
     createdAt: "2026-07-10T00:00:00.000Z",
@@ -356,6 +366,7 @@ describe("enhanceTransform.transformArgs", () => {
         humans: [{ human_id: "human-1", name: "Alice" }],
       },
       ["human-1"],
+      createSnapshot().speakerContext,
     );
   });
 
